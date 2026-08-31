@@ -17,19 +17,22 @@ import org.springframework.web.bind.annotation.RestController;
 public class AuthController {
 
     private final UserService userService;
+    private final JwtTokenService jwtTokenService;
 
-    public AuthController(UserService userService) {
+    public AuthController(UserService userService, JwtTokenService jwtTokenService) {
         this.userService = userService;
+        this.jwtTokenService = jwtTokenService;
     }
 
     /**
      * 校验用户名和密码。
      */
     @PostMapping("/login")
-    public ResponseEntity<UserResponse> login(@RequestBody LoginRequest request) {
+    public ResponseEntity<LoginResponse> login(@RequestBody LoginRequest request) {
         AppUser user = userService.login(request.getUsername(), request.getPassword());
         UserResponse response = new UserResponse(
                 user.getId(), user.getUsername(), user.getNickname(), user.getStatus());
-        return ResponseEntity.ok(response);
+        String token = jwtTokenService.generateToken(user.getId());
+        return ResponseEntity.ok(new LoginResponse(token, response));
     }
 }

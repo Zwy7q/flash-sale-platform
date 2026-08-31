@@ -55,6 +55,25 @@
             <version>6.5.10</version>
         </dependency>
 
+        <!-- JJWT：生成和解析 JWT Token。使用现代 Java 兼容的模块化版本。 -->
+        <dependency>
+            <groupId>io.jsonwebtoken</groupId>
+            <artifactId>jjwt-api</artifactId>
+            <version>0.12.6</version>
+        </dependency>
+        <dependency>
+            <groupId>io.jsonwebtoken</groupId>
+            <artifactId>jjwt-impl</artifactId>
+            <version>0.12.6</version>
+            <scope>runtime</scope>
+        </dependency>
+        <dependency>
+            <groupId>io.jsonwebtoken</groupId>
+            <artifactId>jjwt-jackson</artifactId>
+            <version>0.12.6</version>
+            <scope>runtime</scope>
+        </dependency>
+
         <!-- 测试依赖：JUnit、Spring Test、MockMvc -->
         <dependency>
             <groupId>org.springframework.boot</groupId>
