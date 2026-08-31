@@ -1,0 +1,14 @@
+server:
+  # 统一使用 8080 端口，后续 Vue 前端会请求这个端口。
+  port: 8080
+
+spring:
+  application:
+    name: flash-sale-platform
+
+  datasource:
+    # 3307 是 Windows 主机端口，会转发到 MySQL 容器的 3306 端口。
+    url: jdbc:mysql://localhost:3307/flash_sale?useUnicode=true&characterEncoding=utf8&serverTimezone=Asia/Shanghai
+    username: root
+    password: root123456
+    driver-class-name: com.mysql.cj.jdbc.Driver

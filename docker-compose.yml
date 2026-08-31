@@ -1,0 +1,23 @@
+services:
+  mysql:
+    # 使用官方 MySQL 8 镜像，适合本地开发和学习。
+    image: mysql:8.0.36
+    container_name: flash-sale-mysql
+    restart: unless-stopped
+    environment:
+      # 以下账号只用于本地开发，不要用于生产环境。
+      MYSQL_ROOT_PASSWORD: root123456
+      MYSQL_DATABASE: flash_sale
+      TZ: Asia/Shanghai
+    ports:
+      # 左侧是 Windows 主机端口，右侧是容器内 MySQL 端口。
+      # 本机 3306 已被已有 MySQL 占用，因此使用 3307 避免冲突。
+      - "3307:3306"
+    volumes:
+      # 将数据库文件保存到 Docker volume，容器重启后数据不会丢失。
+      - flash-sale-mysql-data:/var/lib/mysql
+      # 初始化脚本会在数据库第一次创建时自动执行。
+      - ./sql:/docker-entrypoint-initdb.d:ro
+
+volumes:
+  flash-sale-mysql-data:
