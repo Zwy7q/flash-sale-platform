@@ -1,5 +1,7 @@
 package com.example.flashsale.user;
 
+import com.example.flashsale.auth.JwtAuthenticationInterceptor;
+import jakarta.servlet.http.HttpServletRequest;
 import org.springframework.http.ResponseEntity;
 import org.springframework.http.HttpStatus;
 import org.springframework.web.bind.annotation.RequestBody;
@@ -29,6 +31,21 @@ public class UserController {
     @GetMapping("/{id}")
     public ResponseEntity<UserResponse> findById(@PathVariable Long id) {
         return userService.findById(id)
+                .map(this::toResponse)
+                .map(ResponseEntity::ok)
+                .orElseGet(() -> ResponseEntity.notFound().build());
+    }
+
+    /**
+     * 查询当前登录用户。
+     *
+     * 当前用户 ID 已经由 JWT 拦截器放入 request，不直接相信客户端传入的 ID。
+     */
+    @GetMapping("/me")
+    public ResponseEntity<UserResponse> currentUser(HttpServletRequest request) {
+        Long currentUserId = (Long) request.getAttribute(JwtAuthenticationInterceptor.CURRENT_USER_ID);
+
+        return userService.findById(currentUserId)
                 .map(this::toResponse)
                 .map(ResponseEntity::ok)
                 .orElseGet(() -> ResponseEntity.notFound().build());
