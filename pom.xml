@@ -48,6 +48,13 @@
             <optional>true</optional>
         </dependency>
 
+        <!-- 只引入 Spring Security 的密码加密模块，暂时不启用完整登录安全配置。 -->
+        <dependency>
+            <groupId>org.springframework.security</groupId>
+            <artifactId>spring-security-crypto</artifactId>
+            <version>6.5.10</version>
+        </dependency>
+
         <!-- 测试依赖：JUnit、Spring Test、MockMvc -->
         <dependency>
             <groupId>org.springframework.boot</groupId>

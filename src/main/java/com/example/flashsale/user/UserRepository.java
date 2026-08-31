@@ -41,4 +41,44 @@ public class UserRepository {
             return user;
         }, id).stream().findFirst();
     }
+
+    /**
+     * 根据用户名查询用户，用于注册时检查重复用户名。
+     */
+    public Optional<AppUser> findByUsername(String username) {
+        String sql = """
+                SELECT id, username, password_hash, nickname, status,
+                       created_at, updated_at
+                FROM app_user
+                WHERE username = ?
+                """;
+
+        return jdbcTemplate.query(sql, (resultSet, rowNumber) -> {
+            AppUser user = new AppUser();
+            user.setId(resultSet.getLong("id"));
+            user.setUsername(resultSet.getString("username"));
+            user.setPasswordHash(resultSet.getString("password_hash"));
+            user.setNickname(resultSet.getString("nickname"));
+            user.setStatus(resultSet.getInt("status"));
+            user.setCreatedAt(resultSet.getTimestamp("created_at").toLocalDateTime());
+            user.setUpdatedAt(resultSet.getTimestamp("updated_at").toLocalDateTime());
+            return user;
+        }, username).stream().findFirst();
+    }
+
+    /**
+     * 插入新用户。
+     */
+    public void insert(AppUser user) {
+        String sql = """
+                INSERT INTO app_user (username, password_hash, nickname, status)
+                VALUES (?, ?, ?, ?)
+                """;
+
+        jdbcTemplate.update(sql,
+                user.getUsername(),
+                user.getPasswordHash(),
+                user.getNickname(),
+                user.getStatus());
+    }
 }
