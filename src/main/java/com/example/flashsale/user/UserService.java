@@ -2,6 +2,7 @@ package com.example.flashsale.user;
 
 import org.springframework.stereotype.Service;
 import org.springframework.security.crypto.password.PasswordEncoder;
+import com.example.flashsale.auth.InvalidCredentialsException;
 
 import java.util.Optional;
 
@@ -41,5 +42,23 @@ public class UserService {
 
         userRepository.insert(user);
         return userRepository.findByUsername(username).orElseThrow();
+    }
+
+    /**
+     * 登录：查询用户并使用 BCrypt 校验明文密码和数据库密文是否匹配。
+     */
+    public AppUser login(String username, String rawPassword) {
+        AppUser user = userRepository.findByUsername(username)
+                .orElseThrow(InvalidCredentialsException::new);
+
+        if (!passwordEncoder.matches(rawPassword, user.getPasswordHash())) {
+            throw new InvalidCredentialsException();
+        }
+
+        if (!Integer.valueOf(1).equals(user.getStatus())) {
+            throw new InvalidCredentialsException();
+        }
+
+        return user;
     }
 }
