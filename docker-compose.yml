@@ -19,5 +19,14 @@ services:
       # 初始化脚本会在数据库第一次创建时自动执行。
       - ./sql:/docker-entrypoint-initdb.d:ro
 
+  redis:
+    # Redis 是内存型键值数据库，后续用于商品缓存和秒杀库存。
+    image: redis:7.2-alpine
+    container_name: flash-sale-redis
+    restart: unless-stopped
+    ports:
+      # Redis 容器内部默认使用 6379，主机也使用 6379。
+      - "6379:6379"
+
 volumes:
   flash-sale-mysql-data:

@@ -34,6 +34,12 @@
             <artifactId>spring-boot-starter-jdbc</artifactId>
         </dependency>
 
+        <!-- Spring Data Redis：提供 RedisTemplate 和 StringRedisTemplate。 -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-data-redis</artifactId>
+        </dependency>
+
         <!-- MySQL 驱动：让 Java 程序能够连接 MySQL 8 -->
         <dependency>
             <groupId>com.mysql</groupId>

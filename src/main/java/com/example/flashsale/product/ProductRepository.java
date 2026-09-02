@@ -4,6 +4,7 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Repository;
 
 import java.util.List;
+import java.util.Optional;
 
 /**
  * 商品数据访问层。
@@ -47,5 +48,27 @@ public class ProductRepository {
             product.setSeckillEndAt(resultSet.getTimestamp("seckill_end_at").toLocalDateTime());
             return product;
         });
+    }
+
+    /**
+     * 查询指定商品的秒杀库存。
+     *
+     * 这里只返回库存字段，不需要把整行商品数据都查出来，减少数据库和 Java 对象的开销。
+     */
+    public Optional<Integer> findSeckillStockById(Long productId) {
+        String sql = """
+                SELECT seckill_stock
+                FROM app_product
+                WHERE id = ? AND status = 1
+                """;
+
+        List<Integer> stocks = jdbcTemplate.query(
+                sql,
+                preparedStatement -> preparedStatement.setLong(1, productId),
+                (resultSet, rowNumber) -> resultSet.getInt("seckill_stock")
+        );
+
+        // 查询结果为空时返回 Optional.empty()，避免直接返回 null。
+        return stocks.stream().findFirst();
     }
 }
