@@ -67,23 +67,71 @@
 
 **验证：** 商品存在返回 200；不存在返回 404；活动未开始或已结束时返回明确业务结果。
 
-### 阶段 8B：管理员商品管理
+### 阶段 8B：管理员身份和商品管理
 
-**目标：** 增加新增商品和上下架能力，为后续库存预热提供管理入口。
+**目标：** 先建立管理员身份拦截，再增加新增、修改全部信息和上下架能力，为后续库存预热和缓存失效提供安全的管理入口。
+
+**8B-0：管理员身份拦截（必须先完成）。**
+
+- `/api/admin/**` 请求必须先通过 JWT 拦截器；
+- 没有 `Authorization: Bearer <token>` 或 Token 无效时返回 `401 Unauthorized`；
+- JWT 有效但当前用户不是管理员时返回 `403 Forbidden`；
+- 当前教学阶段使用配置化管理员 ID，例如 `app.admin-user-id: 1`，避免现在立刻修改用户表结构；
+- `AdminAuthorizationInterceptor` 只负责判断身份，不处理商品业务；
+- 在 `WebConfig` 中只拦截 `/api/admin/**`，登录、注册、普通商品查询不受管理员拦截影响。
+
+**管理员请求链路：**
+
+```text
+HTTP 请求
+    ↓
+JWTAuthenticationInterceptor：Token 是否有效？
+    ↓
+AdminAuthorizationInterceptor：用户是否为管理员？
+    ↓
+AdminProductController
+```
+
+**8B-1：管理员新增商品。**
 
 **文件：**
 
 - 创建 `AdminProductController.java`、`CreateProductRequest.java`；
-- 修改 `ProductService.java` 和 `ProductRepository.java`：新增商品、修改状态；
-- 创建 `AdminProductControllerTest.java`；
-- 为用户增加最小角色字段或配置化管理员 ID，并在测试中验证非管理员返回 403。
+- 修改 `ProductService.java` 和 `ProductRepository.java`：新增商品；
+- 创建 `AdminAuthorizationInterceptorTest.java` 和 `AdminProductControllerTest.java`；
+- 在测试中验证未登录返回 401、普通用户返回 403、管理员可以访问。
 
 **接口：**
 
 ```text
 POST /api/admin/products
-PUT  /api/admin/products/{id}/status
 ```
+
+**8B-2：管理员修改商品全部信息。**
+
+管理员可以修改：
+
+- 商品名称和描述；
+- 原价和秒杀价；
+- 普通库存和秒杀库存；
+- 上下架状态；
+- 秒杀开始和结束时间。
+
+**接口：**
+
+```text
+PUT /api/admin/products/{id}
+```
+
+**8B-3：管理员快速上下架。**
+
+保留一个只修改状态的快捷接口，供管理后台列表页按钮使用：
+
+```text
+PUT /api/admin/products/{id}/status
+```
+
+新增、修改或上下架成功后，统一删除商品详情缓存和商品列表缓存；如果秒杀库存发生变化，再同步 Redis 库存。
 
 ### 阶段 9：完善 Redis 缓存、失效和缓存异常保护
 

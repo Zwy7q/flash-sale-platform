@@ -12,6 +12,7 @@ import org.springframework.data.redis.core.ValueOperations;
 
 import java.util.List;
 import java.util.Optional;
+import java.time.LocalDateTime;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertSame;
@@ -83,5 +84,54 @@ class ProductServiceTest {
 
         assertSame(expectedProduct, actualProduct.orElseThrow());
         verify(productRepository).findOnSaleById(1L);
+    }
+
+    @Test
+    void shouldReturnFalseBeforeSeckillStarts() {
+        Product product = productWithSeckillTime(
+                LocalDateTime.of(2026, 9, 4, 10, 0),
+                LocalDateTime.of(2026, 9, 4, 12, 0));
+
+        boolean active = productService.isSeckillActive(
+                product, LocalDateTime.of(2026, 9, 4, 9, 59));
+
+        assertEquals(false, active);
+    }
+
+    @Test
+    void shouldReturnTrueDuringSeckill() {
+        Product product = productWithSeckillTime(
+                LocalDateTime.of(2026, 9, 4, 10, 0),
+                LocalDateTime.of(2026, 9, 4, 12, 0));
+
+        boolean active = productService.isSeckillActive(
+                product, LocalDateTime.of(2026, 9, 4, 11, 0));
+
+        assertEquals(true, active);
+    }
+
+    @Test
+    void shouldReturnFalseAtOrAfterSeckillEnds() {
+        Product product = productWithSeckillTime(
+                LocalDateTime.of(2026, 9, 4, 10, 0),
+                LocalDateTime.of(2026, 9, 4, 12, 0));
+
+        boolean activeAtEnd = productService.isSeckillActive(
+                product, LocalDateTime.of(2026, 9, 4, 12, 0));
+        boolean activeAfterEnd = productService.isSeckillActive(
+                product, LocalDateTime.of(2026, 9, 4, 12, 1));
+
+        assertEquals(false, activeAtEnd);
+        assertEquals(false, activeAfterEnd);
+    }
+
+    /** 构造只包含活动时间的商品，避免每个测试重复填写其他字段。 */
+    private Product productWithSeckillTime(
+            LocalDateTime startAt,
+            LocalDateTime endAt) {
+        Product product = new Product();
+        product.setSeckillStartAt(startAt);
+        product.setSeckillEndAt(endAt);
+        return product;
     }
 }
