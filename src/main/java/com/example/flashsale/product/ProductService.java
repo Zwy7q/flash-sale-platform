@@ -7,6 +7,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.data.redis.core.StringRedisTemplate;
 
 import java.time.Duration;
+import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Optional;
 
@@ -75,5 +76,19 @@ public class ProductService {
      */
     public Optional<Product> findOnSaleProduct(Long productId) {
         return productRepository.findOnSaleById(productId);
+    }
+
+    /**
+     * 判断商品当前是否处于秒杀活动时间窗口。
+     *
+     * 规则为：开始时间可以参加，结束时间这一刻开始不再参加，
+     * 因此使用 start <= now && now < end。
+     * 将 now 作为参数传入，便于单元测试固定时间，不依赖电脑系统时钟。
+     */
+    public boolean isSeckillActive(Product product, LocalDateTime now) {
+        LocalDateTime startAt = product.getSeckillStartAt();
+        LocalDateTime endAt = product.getSeckillEndAt();
+
+        return !now.isBefore(startAt) && now.isBefore(endAt);
     }
 }
