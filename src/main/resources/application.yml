@@ -2,6 +2,10 @@ server:
   # 统一使用 8080 端口，后续 Vue 前端会请求这个端口。
   port: 8080
 
+app:
+  # 教学阶段使用固定管理员用户 ID，后续可升级为用户表 role 字段。
+  admin-user-id: 1
+
 spring:
   application:
     name: flash-sale-platform
