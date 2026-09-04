@@ -11,6 +11,7 @@ import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.data.redis.core.ValueOperations;
 
 import java.util.List;
+import java.util.Optional;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertSame;
@@ -68,5 +69,19 @@ class ProductServiceTest {
         // JSON 反序列化会创建新的 String 对象，所以比较内容应使用 assertEquals。
         assertEquals(cachedProducts.get(0).getName(), actualProducts.get(0).getName());
         verify(productRepository, org.mockito.Mockito.never()).findAllOnSale();
+    }
+
+    @Test
+    void shouldFindOnSaleProductById() {
+        Product expectedProduct = new Product();
+        expectedProduct.setId(1L);
+        expectedProduct.setName("演示机械键盘");
+        when(productRepository.findOnSaleById(1L))
+                .thenReturn(Optional.of(expectedProduct));
+
+        Optional<Product> actualProduct = productService.findOnSaleProduct(1L);
+
+        assertSame(expectedProduct, actualProduct.orElseThrow());
+        verify(productRepository).findOnSaleById(1L);
     }
 }

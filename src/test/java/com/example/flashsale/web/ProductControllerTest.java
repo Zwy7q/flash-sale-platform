@@ -35,4 +35,25 @@ class ProductControllerTest {
                         }]
                         """));
     }
+
+    @Test
+    void shouldReturnProductById() throws Exception {
+        mockMvc.perform(get("/api/products/1"))
+                .andExpect(status().isOk())
+                .andExpect(content().json("""
+                        {
+                          "id": 1,
+                          "name": "演示机械键盘",
+                          "price": 299.00,
+                          "seckillPrice": 199.00,
+                          "seckillStock": 100
+                        }
+                        """));
+    }
+
+    @Test
+    void shouldReturnNotFoundWhenProductDoesNotExist() throws Exception {
+        mockMvc.perform(get("/api/products/999999"))
+                .andExpect(status().isNotFound());
+    }
 }

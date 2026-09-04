@@ -71,4 +71,39 @@ public class ProductRepository {
         // 查询结果为空时返回 Optional.empty()，避免直接返回 null。
         return stocks.stream().findFirst();
     }
+
+    /**
+     * 根据商品 ID 查询一件正在上架的商品。
+     * 查询不到时返回 Optional.empty()，由 Service 层决定如何处理。
+     */
+    public Optional<Product> findOnSaleById(Long productId) {
+        String sql = """
+                SELECT id, name, description, price, seckill_price,
+                       stock, seckill_stock, status,
+                       seckill_start_at, seckill_end_at
+                FROM app_product
+                WHERE id = ? AND status = 1
+                """;
+
+        List<Product> products = jdbcTemplate.query(
+                sql,
+                preparedStatement -> preparedStatement.setLong(1, productId),
+                (resultSet, rowNumber) -> {
+                    Product product = new Product();
+                    product.setId(resultSet.getLong("id"));
+                    product.setName(resultSet.getString("name"));
+                    product.setDescription(resultSet.getString("description"));
+                    product.setPrice(resultSet.getBigDecimal("price"));
+                    product.setSeckillPrice(resultSet.getBigDecimal("seckill_price"));
+                    product.setStock(resultSet.getInt("stock"));
+                    product.setSeckillStock(resultSet.getInt("seckill_stock"));
+                    product.setStatus(resultSet.getInt("status"));
+                    product.setSeckillStartAt(resultSet.getTimestamp("seckill_start_at").toLocalDateTime());
+                    product.setSeckillEndAt(resultSet.getTimestamp("seckill_end_at").toLocalDateTime());
+                    return product;
+                }
+        );
+
+        return products.stream().findFirst();
+    }
 }

@@ -8,6 +8,7 @@ import org.springframework.data.redis.core.StringRedisTemplate;
 
 import java.time.Duration;
 import java.util.List;
+import java.util.Optional;
 
 /**
  * 商品业务层。
@@ -67,5 +68,12 @@ public class ProductService {
         }
 
         return products;
+    }
+
+    /**
+     * 查询一件正在上架的商品详情。
+     */
+    public Optional<Product> findOnSaleProduct(Long productId) {
+        return productRepository.findOnSaleById(productId);
     }
 }
