@@ -1,8 +1,11 @@
 package com.example.flashsale.product;
 
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.jdbc.support.GeneratedKeyHolder;
+import org.springframework.jdbc.support.KeyHolder;
 import org.springframework.stereotype.Repository;
 
+import java.sql.Statement;
 import java.util.List;
 import java.util.Optional;
 
@@ -83,6 +86,77 @@ public class ProductRepository {
                        seckill_start_at, seckill_end_at
                 FROM app_product
                 WHERE id = ? AND status = 1
+                """;
+
+        List<Product> products = jdbcTemplate.query(
+                sql,
+                preparedStatement -> preparedStatement.setLong(1, productId),
+                (resultSet, rowNumber) -> {
+                    Product product = new Product();
+                    product.setId(resultSet.getLong("id"));
+                    product.setName(resultSet.getString("name"));
+                    product.setDescription(resultSet.getString("description"));
+                    product.setPrice(resultSet.getBigDecimal("price"));
+                    product.setSeckillPrice(resultSet.getBigDecimal("seckill_price"));
+                    product.setStock(resultSet.getInt("stock"));
+                    product.setSeckillStock(resultSet.getInt("seckill_stock"));
+                    product.setStatus(resultSet.getInt("status"));
+                    product.setSeckillStartAt(resultSet.getTimestamp("seckill_start_at").toLocalDateTime());
+                    product.setSeckillEndAt(resultSet.getTimestamp("seckill_end_at").toLocalDateTime());
+                    return product;
+                }
+        );
+
+        return products.stream().findFirst();
+    }
+
+    /**
+     * 新增商品并返回数据库生成的商品 ID。
+     */
+    public Product create(CreateProductRequest request) {
+        String sql = """
+                INSERT INTO app_product (
+                    name, description, price, seckill_price,
+                    stock, seckill_stock, status,
+                    seckill_start_at, seckill_end_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """;
+
+        KeyHolder keyHolder = new GeneratedKeyHolder();
+
+        jdbcTemplate.update(connection -> {
+            var preparedStatement = connection.prepareStatement(
+                    sql, Statement.RETURN_GENERATED_KEYS);
+            preparedStatement.setString(1, request.getName());
+            preparedStatement.setString(2, request.getDescription());
+            preparedStatement.setBigDecimal(3, request.getPrice());
+            preparedStatement.setBigDecimal(4, request.getSeckillPrice());
+            preparedStatement.setInt(5, request.getStock());
+            preparedStatement.setInt(6, request.getSeckillStock());
+            preparedStatement.setInt(7, request.getStatus());
+            preparedStatement.setObject(8, request.getSeckillStartAt());
+            preparedStatement.setObject(9, request.getSeckillEndAt());
+            return preparedStatement;
+        }, keyHolder);
+
+        Number generatedId = keyHolder.getKey();
+        if (generatedId == null) {
+            throw new IllegalStateException("商品新增后没有获得自增 ID");
+        }
+
+        // 使用数据库生成的 ID 查询，避免并发新增同名商品时查错记录。
+        return findAnyById(generatedId.longValue())
+                .orElseThrow(() -> new IllegalStateException("商品新增后查询失败"));
+    }
+
+    /** 根据商品 ID 查询商品，不限制上下架状态。 */
+    private Optional<Product> findAnyById(Long productId) {
+        String sql = """
+                SELECT id, name, description, price, seckill_price,
+                       stock, seckill_stock, status,
+                       seckill_start_at, seckill_end_at
+                FROM app_product
+                WHERE id = ?
                 """;
 
         List<Product> products = jdbcTemplate.query(

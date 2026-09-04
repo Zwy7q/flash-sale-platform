@@ -91,4 +91,11 @@ public class ProductService {
 
         return !now.isBefore(startAt) && now.isBefore(endAt);
     }
+
+    /**
+     * 创建商品。基础字段校验将在管理员接口稳定后继续补充。
+     */
+    public Product createProduct(CreateProductRequest request) {
+        return productRepository.create(request);
+    }
 }

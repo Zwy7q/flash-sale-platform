@@ -41,9 +41,9 @@ class AdminAuthorizationIntegrationTest {
     void shouldPassInterceptorsForAdminToken() throws Exception {
         String adminToken = jwtTokenService.generateToken(1L);
 
-        // 当前管理员 Controller 尚未创建，所以通过拦截器后会得到 404。
+        // 管理员 Controller 已存在，但当前只实现 POST，所以 GET 会得到 405。
         mockMvc.perform(get("/api/admin/products")
                         .header("Authorization", "Bearer " + adminToken))
-                .andExpect(status().isNotFound());
+                .andExpect(status().isMethodNotAllowed());
     }
 }

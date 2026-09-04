@@ -13,6 +13,7 @@ import org.springframework.data.redis.core.ValueOperations;
 import java.util.List;
 import java.util.Optional;
 import java.time.LocalDateTime;
+import java.math.BigDecimal;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertSame;
@@ -123,6 +124,31 @@ class ProductServiceTest {
 
         assertEquals(false, activeAtEnd);
         assertEquals(false, activeAfterEnd);
+    }
+
+    @Test
+    void shouldCreateProductThroughRepository() {
+        CreateProductRequest request = new CreateProductRequest();
+        request.setName("新增商品");
+        request.setDescription("新增商品描述");
+        request.setPrice(new BigDecimal("199.00"));
+        request.setSeckillPrice(new BigDecimal("129.00"));
+        request.setStock(100);
+        request.setSeckillStock(50);
+        request.setStatus(1);
+        request.setSeckillStartAt(LocalDateTime.of(2026, 9, 5, 10, 0));
+        request.setSeckillEndAt(LocalDateTime.of(2026, 9, 5, 12, 0));
+
+        Product createdProduct = new Product();
+        createdProduct.setId(10L);
+        createdProduct.setName("新增商品");
+        when(productRepository.create(request)).thenReturn(createdProduct);
+
+        Product actualProduct = productService.createProduct(request);
+
+        assertEquals(10L, actualProduct.getId());
+        assertEquals("新增商品", actualProduct.getName());
+        verify(productRepository).create(request);
     }
 
     /** 构造只包含活动时间的商品，避免每个测试重复填写其他字段。 */
