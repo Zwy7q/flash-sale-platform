@@ -151,6 +151,32 @@ class ProductServiceTest {
         verify(productRepository).create(request);
     }
 
+    @Test
+    void shouldUpdateProductThroughRepository() {
+        UpdateProductRequest request = new UpdateProductRequest();
+        request.setName("修改后的商品");
+        request.setDescription("修改后的描述");
+        request.setPrice(new BigDecimal("399.00"));
+        request.setSeckillPrice(new BigDecimal("299.00"));
+        request.setStock(300);
+        request.setSeckillStock(120);
+        request.setStatus(1);
+        request.setSeckillStartAt(LocalDateTime.of(2026, 9, 6, 10, 0));
+        request.setSeckillEndAt(LocalDateTime.of(2026, 9, 6, 12, 0));
+
+        Product updatedProduct = new Product();
+        updatedProduct.setId(1L);
+        updatedProduct.setName("修改后的商品");
+        updatedProduct.setStock(300);
+        when(productRepository.update(1L, request)).thenReturn(Optional.of(updatedProduct));
+
+        Optional<Product> actualProduct = productService.updateProduct(1L, request);
+
+        assertEquals("修改后的商品", actualProduct.orElseThrow().getName());
+        assertEquals(300, actualProduct.orElseThrow().getStock());
+        verify(productRepository).update(1L, request);
+    }
+
     /** 构造只包含活动时间的商品，避免每个测试重复填写其他字段。 */
     private Product productWithSeckillTime(
             LocalDateTime startAt,

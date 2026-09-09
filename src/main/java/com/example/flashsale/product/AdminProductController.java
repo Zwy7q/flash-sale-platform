@@ -2,6 +2,8 @@ package com.example.flashsale.product;
 
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.PutMapping;
+import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
@@ -25,5 +27,17 @@ public class AdminProductController {
     public ResponseEntity<Product> create(@RequestBody CreateProductRequest request) {
         Product product = productService.createProduct(request);
         return ResponseEntity.ok(product);
+    }
+
+    /**
+     * 管理员修改商品的全部可编辑信息。
+     */
+    @PutMapping("/{id}")
+    public ResponseEntity<Product> update(
+            @PathVariable Long id,
+            @RequestBody UpdateProductRequest request) {
+        return productService.updateProduct(id, request)
+                .map(ResponseEntity::ok)
+                .orElseGet(() -> ResponseEntity.notFound().build());
     }
 }

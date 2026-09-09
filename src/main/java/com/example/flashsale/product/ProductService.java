@@ -98,4 +98,11 @@ public class ProductService {
     public Product createProduct(CreateProductRequest request) {
         return productRepository.create(request);
     }
+
+    /**
+     * 修改商品全部信息。商品不存在时返回 Optional.empty()。
+     */
+    public Optional<Product> updateProduct(Long productId, UpdateProductRequest request) {
+        return productRepository.update(productId, request);
+    }
 }

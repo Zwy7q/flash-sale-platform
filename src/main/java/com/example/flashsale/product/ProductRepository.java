@@ -180,4 +180,44 @@ public class ProductRepository {
 
         return products.stream().findFirst();
     }
+
+    /**
+     * 修改商品的全部可编辑字段。
+     * 返回 Optional.empty() 表示指定 ID 的商品不存在。
+     */
+    public Optional<Product> update(Long productId, UpdateProductRequest request) {
+        String sql = """
+                UPDATE app_product
+                SET name = ?,
+                    description = ?,
+                    price = ?,
+                    seckill_price = ?,
+                    stock = ?,
+                    seckill_stock = ?,
+                    status = ?,
+                    seckill_start_at = ?,
+                    seckill_end_at = ?
+                WHERE id = ?
+                """;
+
+        int affectedRows = jdbcTemplate.update(
+                sql,
+                request.getName(),
+                request.getDescription(),
+                request.getPrice(),
+                request.getSeckillPrice(),
+                request.getStock(),
+                request.getSeckillStock(),
+                request.getStatus(),
+                request.getSeckillStartAt(),
+                request.getSeckillEndAt(),
+                productId
+        );
+
+        if (affectedRows == 0) {
+            return Optional.empty();
+        }
+
+        return findAnyById(productId);
+    }
 }
