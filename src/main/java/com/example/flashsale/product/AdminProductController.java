@@ -8,6 +8,8 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
+import java.util.Optional;
+
 /**
  * 管理员商品接口。
  * /api/admin/** 已由 JWT 和管理员拦截器保护。
@@ -36,8 +38,28 @@ public class AdminProductController {
     public ResponseEntity<Product> update(
             @PathVariable Long id,
             @RequestBody UpdateProductRequest request) {
-        return productService.updateProduct(id, request)
-                .map(ResponseEntity::ok)
-                .orElseGet(() -> ResponseEntity.notFound().build());
+        Optional<Product> result = productService.updateProduct(id, request);
+        if (result.isPresent()) {
+            Product product = result.get();
+            return ResponseEntity.ok(product);
+        } else {
+            return ResponseEntity.notFound().build();
+        }
+    }
+
+    /**
+     * 管理员快速修改商品上下架状态。
+     */
+    @PutMapping("/{id}/status")
+    public ResponseEntity<Product> updateStatus(
+            @PathVariable Long id,
+            @RequestBody UpdateProductStatusRequest request) {
+        Optional<Product> result = productService.updateProductStatus(id, request.getStatus());
+        if (result.isPresent()) {
+            Product product = result.get();
+            return ResponseEntity.ok(product);
+        } else {
+            return ResponseEntity.notFound().build();
+        }
     }
 }

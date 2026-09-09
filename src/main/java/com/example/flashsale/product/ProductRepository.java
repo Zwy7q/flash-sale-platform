@@ -220,4 +220,22 @@ public class ProductRepository {
 
         return findAnyById(productId);
     }
+
+    /**
+     * 快速修改商品上下架状态。
+     */
+    public Optional<Product> updateStatus(Long productId, Integer status) {
+        String sql = """
+                UPDATE app_product
+                SET status = ?
+                WHERE id = ?
+                """;
+
+        int affectedRows = jdbcTemplate.update(sql, status, productId);
+        if (affectedRows == 0) {
+            return Optional.empty();
+        }
+
+        return findAnyById(productId);
+    }
 }

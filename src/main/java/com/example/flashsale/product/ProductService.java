@@ -105,4 +105,15 @@ public class ProductService {
     public Optional<Product> updateProduct(Long productId, UpdateProductRequest request) {
         return productRepository.update(productId, request);
     }
+
+    /**
+     * 快速修改商品上下架状态。
+     */
+    public Optional<Product> updateProductStatus(Long productId, Integer status) {
+        if (status == null || (status != 0 && status != 1)) {
+            throw new IllegalArgumentException("商品状态只能是 0 或 1");
+        }
+
+        return productRepository.updateStatus(productId, status);
+    }
 }

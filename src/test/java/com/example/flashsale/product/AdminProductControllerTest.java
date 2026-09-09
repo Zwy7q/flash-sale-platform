@@ -104,4 +104,36 @@ class AdminProductControllerTest {
                                 """))
                 .andExpect(status().isNotFound());
     }
+
+    @Test
+    void shouldTakeProductOffSaleWhenAdminChangesStatus() throws Exception {
+        String adminToken = jwtTokenService.generateToken(1L);
+
+        mockMvc.perform(put("/api/admin/products/1/status")
+                        .header("Authorization", "Bearer " + adminToken)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "status": 0
+                                }
+                                """))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.id").value(1))
+                .andExpect(jsonPath("$.status").value(0));
+    }
+
+    @Test
+    void shouldReturnNotFoundWhenChangingStatusOfMissingProduct() throws Exception {
+        String adminToken = jwtTokenService.generateToken(1L);
+
+        mockMvc.perform(put("/api/admin/products/999999/status")
+                        .header("Authorization", "Bearer " + adminToken)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "status": 0
+                                }
+                                """))
+                .andExpect(status().isNotFound());
+    }
 }

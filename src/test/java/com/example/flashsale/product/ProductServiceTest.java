@@ -177,6 +177,20 @@ class ProductServiceTest {
         verify(productRepository).update(1L, request);
     }
 
+    @Test
+    void shouldUpdateProductStatusThroughRepository() {
+        Product updatedProduct = new Product();
+        updatedProduct.setId(1L);
+        updatedProduct.setStatus(0);
+        when(productRepository.updateStatus(1L, 0))
+                .thenReturn(Optional.of(updatedProduct));
+
+        Optional<Product> result = productService.updateProductStatus(1L, 0);
+
+        assertEquals(0, result.orElseThrow().getStatus());
+        verify(productRepository).updateStatus(1L, 0);
+    }
+
     /** 构造只包含活动时间的商品，避免每个测试重复填写其他字段。 */
     private Product productWithSeckillTime(
             LocalDateTime startAt,
