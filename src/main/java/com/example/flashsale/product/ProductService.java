@@ -7,6 +7,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.data.redis.core.StringRedisTemplate;
 
 import java.time.Duration;
+import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Optional;
 
@@ -75,5 +76,41 @@ public class ProductService {
      */
     public Optional<Product> findOnSaleProduct(Long productId) {
         return productRepository.findOnSaleById(productId);
+    }
+
+    /**
+     * 判断商品当前是否处于秒杀活动时间窗口。
+     * 开始时间可以参加，结束时间这一刻开始不再参加。
+     */
+    public boolean isSeckillActive(Product product, LocalDateTime now) {
+        LocalDateTime startAt = product.getSeckillStartAt();
+        LocalDateTime endAt = product.getSeckillEndAt();
+
+        return !now.isBefore(startAt) && now.isBefore(endAt);
+    }
+
+    /**
+     * 创建商品。
+     */
+    public Product createProduct(CreateProductRequest request) {
+        return productRepository.create(request);
+    }
+
+    /**
+     * 修改商品全部信息。商品不存在时返回 Optional.empty()。
+     */
+    public Optional<Product> updateProduct(Long productId, UpdateProductRequest request) {
+        return productRepository.update(productId, request);
+    }
+
+    /**
+     * 快速修改商品上下架状态。
+     */
+    public Optional<Product> updateProductStatus(Long productId, Integer status) {
+        if (status == null || (status != 0 && status != 1)) {
+            throw new IllegalArgumentException("商品状态只能是 0 或 1");
+        }
+
+        return productRepository.updateStatus(productId, status);
     }
 }
