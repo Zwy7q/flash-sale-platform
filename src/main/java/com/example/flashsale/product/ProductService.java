@@ -10,6 +10,7 @@ import java.time.Duration;
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Optional;
+import java.util.concurrent.ThreadLocalRandom;
 
 /**
  * 商品业务层。
@@ -33,8 +34,11 @@ public class ProductService {
      */
     public static final String EMPTY_PRODUCT_CACHE_VALUE = "__EMPTY_PRODUCT__";
 
-    /** 缓存有效期，避免商品数据永久不更新。 */
-    private static final Duration PRODUCT_CACHE_TTL = Duration.ofSeconds(500);
+    /** 商品正常缓存的基础有效期。 */
+    private static final long PRODUCT_CACHE_TTL_SECONDS = 500;
+
+    /** 每个商品缓存额外随机增加的最大秒数。 */
+    private static final int PRODUCT_CACHE_TTL_JITTER_MAX_SECONDS = 30;
 
     /** 空值缓存只保存较短时间，避免商品后来创建后长时间查不到。 */
     private static final Duration EMPTY_PRODUCT_CACHE_TTL = Duration.ofSeconds(30);
@@ -76,7 +80,10 @@ public class ProductService {
         try {
             String json = objectMapper.writeValueAsString(products);
             // 回填缓存，并设置 TTL，让缓存最终自动失效。
-            stringRedisTemplate.opsForValue().set(PRODUCT_LIST_CACHE_KEY, json, PRODUCT_CACHE_TTL);
+            stringRedisTemplate.opsForValue().set(
+                    PRODUCT_LIST_CACHE_KEY,
+                    json,
+                    randomProductCacheTtl());
         } catch (JsonProcessingException exception) {
             // 序列化失败不影响本次查询结果，只是不写入缓存。
         }
@@ -117,7 +124,7 @@ public class ProductService {
                 stringRedisTemplate.opsForValue().set(
                         cacheKey,
                         json,
-                        PRODUCT_CACHE_TTL);
+                        randomProductCacheTtl());
             } catch (JsonProcessingException exception) {
                 // 序列化失败不影响本次查询，只是不写入缓存。
             }
@@ -135,6 +142,30 @@ public class ProductService {
     /** 根据商品 ID 构造商品详情缓存 Key。 */
     public static String productDetailCacheKey(Long productId) {
         return PRODUCT_DETAIL_CACHE_KEY_PREFIX + productId;
+    }
+
+    /**
+     * 根据指定的随机偏移量计算缓存 TTL。
+     *
+     * 这个方法不直接产生随机数，便于测试“基础时间 + 偏移量”的计算规则。
+     */
+    static Duration productCacheTtlWithJitter(int jitterSeconds) {
+        if (jitterSeconds < 0 || jitterSeconds > PRODUCT_CACHE_TTL_JITTER_MAX_SECONDS) {
+            throw new IllegalArgumentException("缓存随机偏移量必须在 0 到 30 秒之间");
+        }
+
+        return Duration.ofSeconds(PRODUCT_CACHE_TTL_SECONDS + jitterSeconds);
+    }
+
+    /**
+     * 生成本次写缓存要使用的 TTL。
+     *
+     * 不同 Key 会得到不同的过期时间，降低大量缓存同一时刻失效的概率。
+     */
+    private Duration randomProductCacheTtl() {
+        int jitterSeconds = ThreadLocalRandom.current()
+                .nextInt(PRODUCT_CACHE_TTL_JITTER_MAX_SECONDS + 1);
+        return productCacheTtlWithJitter(jitterSeconds);
     }
 
     /**

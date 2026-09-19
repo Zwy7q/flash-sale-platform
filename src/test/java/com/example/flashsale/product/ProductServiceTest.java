@@ -75,6 +75,17 @@ class ProductServiceTest {
     }
 
     @Test
+    void shouldAddJitterToProductCacheTtl() {
+        // 随机偏移最小为 0 秒，最大为 30 秒。
+        assertEquals(
+                java.time.Duration.ofSeconds(500),
+                ProductService.productCacheTtlWithJitter(0));
+        assertEquals(
+                java.time.Duration.ofSeconds(530),
+                ProductService.productCacheTtlWithJitter(30));
+    }
+
+    @Test
     void shouldFindOnSaleProductById() {
         Product expectedProduct = new Product();
         expectedProduct.setId(1L);
