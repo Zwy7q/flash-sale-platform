@@ -87,4 +87,72 @@ class StockRedisServiceTest {
 
         assertFalse(deducted);
     }
+
+    @Test
+    void shouldReturnSuccessWhenUserDeductsStockForTheFirstTime() {
+        when(stringRedisTemplate.execute(
+                org.mockito.ArgumentMatchers.<RedisScript<Long>>any(),
+                org.mockito.ArgumentMatchers.eq(java.util.List.of(
+                        "flash-sale:stock:1",
+                        "flash-sale:purchase:1:20"))))
+                .thenReturn(1L);
+
+        StockRedisService stockRedisService =
+                new StockRedisService(stringRedisTemplate, productRepository);
+
+        StockDeductionResult result = stockRedisService.tryDeductStock(1L, 20L);
+
+        assertEquals(StockDeductionResult.SUCCESS, result);
+    }
+
+    @Test
+    void shouldReturnDuplicatePurchaseWhenUserHasBoughtBefore() {
+        when(stringRedisTemplate.execute(
+                org.mockito.ArgumentMatchers.<RedisScript<Long>>any(),
+                org.mockito.ArgumentMatchers.eq(java.util.List.of(
+                        "flash-sale:stock:1",
+                        "flash-sale:purchase:1:20"))))
+                .thenReturn(-2L);
+
+        StockRedisService stockRedisService =
+                new StockRedisService(stringRedisTemplate, productRepository);
+
+        StockDeductionResult result = stockRedisService.tryDeductStock(1L, 20L);
+
+        assertEquals(StockDeductionResult.DUPLICATE_PURCHASE, result);
+    }
+
+    @Test
+    void shouldReturnOutOfStockWhenUserCannotDeductStock() {
+        when(stringRedisTemplate.execute(
+                org.mockito.ArgumentMatchers.<RedisScript<Long>>any(),
+                org.mockito.ArgumentMatchers.eq(java.util.List.of(
+                        "flash-sale:stock:1",
+                        "flash-sale:purchase:1:20"))))
+                .thenReturn(0L);
+
+        StockRedisService stockRedisService =
+                new StockRedisService(stringRedisTemplate, productRepository);
+
+        StockDeductionResult result = stockRedisService.tryDeductStock(1L, 20L);
+
+        assertEquals(StockDeductionResult.OUT_OF_STOCK, result);
+    }
+
+    @Test
+    void shouldReturnNotWarmedUpWhenStockKeyDoesNotExist() {
+        when(stringRedisTemplate.execute(
+                org.mockito.ArgumentMatchers.<RedisScript<Long>>any(),
+                org.mockito.ArgumentMatchers.eq(java.util.List.of(
+                        "flash-sale:stock:1",
+                        "flash-sale:purchase:1:20"))))
+                .thenReturn(-1L);
+
+        StockRedisService stockRedisService =
+                new StockRedisService(stringRedisTemplate, productRepository);
+
+        StockDeductionResult result = stockRedisService.tryDeductStock(1L, 20L);
+
+        assertEquals(StockDeductionResult.STOCK_NOT_WARMED_UP, result);
+    }
 }

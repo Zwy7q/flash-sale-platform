@@ -18,6 +18,8 @@ public class StockRedisService {
 
     private static final String STOCK_KEY_PREFIX = "flash-sale:stock:";
 
+    private static final String PURCHASE_KEY_PREFIX = "flash-sale:purchase:";
+
     /**
      * Lua 原子扣减库存脚本。
      *
@@ -27,6 +29,15 @@ public class StockRedisService {
      * -1：Redis 中尚未预热该商品库存。
      */
     private static final DefaultRedisScript<Long> STOCK_DEDUCTION_SCRIPT =
+            new DefaultRedisScript<>();
+
+    /**
+     * 同时检查重复购买并扣减库存的 Lua 脚本。
+     *
+     * KEYS[1]：商品库存 Key；KEYS[2]：用户购买标记 Key。
+     * 返回值约定：1 成功，0 库存不足，-1 库存未预热，-2 重复购买。
+     */
+    private static final DefaultRedisScript<Long> USER_STOCK_DEDUCTION_SCRIPT =
             new DefaultRedisScript<>();
 
     static {
@@ -49,6 +60,32 @@ public class StockRedisService {
                 return 1
                 """);
         STOCK_DEDUCTION_SCRIPT.setResultType(Long.class);
+
+        USER_STOCK_DEDUCTION_SCRIPT.setScriptText("""
+                -- 如果购买标记已经存在，说明该用户已经抢购过该商品。
+                if redis.call('EXISTS', KEYS[2]) == 1 then
+                    return -2
+                end
+
+                -- 读取商品的秒杀库存。
+                local stock = redis.call('GET', KEYS[1])
+
+                -- 库存 Key 不存在，说明还没有预热库存。
+                if not stock then
+                    return -1
+                end
+
+                -- 库存不足时，不扣库存，也不写购买标记。
+                if tonumber(stock) <= 0 then
+                    return 0
+                end
+
+                -- 库存扣减和购买标记写入在同一个原子脚本中完成。
+                redis.call('DECR', KEYS[1])
+                redis.call('SET', KEYS[2], '1')
+                return 1
+                """);
+        USER_STOCK_DEDUCTION_SCRIPT.setResultType(Long.class);
     }
 
     private final StringRedisTemplate stringRedisTemplate;
@@ -66,6 +103,11 @@ public class StockRedisService {
      */
     public String stockKey(Long productId) {
         return STOCK_KEY_PREFIX + productId;
+    }
+
+    /** 构造“用户已经购买过某商品”的 Redis Key。 */
+    public String purchaseKey(Long productId, Long userId) {
+        return PURCHASE_KEY_PREFIX + productId + ":" + userId;
     }
 
     /**
@@ -110,5 +152,34 @@ public class StockRedisService {
                 List.of(stockKey(productId)));
 
         return Long.valueOf(1L).equals(scriptResult);
+    }
+
+    /**
+     * 检查用户是否重复购买，并原子扣减库存。
+     *
+     * 这是 10B 阶段的能力；下一阶段由秒杀 Service 调用它。
+     */
+    public StockDeductionResult tryDeductStock(Long productId, Long userId) {
+        Long scriptResult = stringRedisTemplate.execute(
+                USER_STOCK_DEDUCTION_SCRIPT,
+                List.of(stockKey(productId), purchaseKey(productId, userId)));
+
+        if (Long.valueOf(1L).equals(scriptResult)) {
+            return StockDeductionResult.SUCCESS;
+        }
+
+        if (Long.valueOf(-2L).equals(scriptResult)) {
+            return StockDeductionResult.DUPLICATE_PURCHASE;
+        }
+
+        if (Long.valueOf(0L).equals(scriptResult)) {
+            return StockDeductionResult.OUT_OF_STOCK;
+        }
+
+        if (Long.valueOf(-1L).equals(scriptResult)) {
+            return StockDeductionResult.STOCK_NOT_WARMED_UP;
+        }
+
+        throw new IllegalStateException("Lua 扣库存脚本返回了未知结果：" + scriptResult);
     }
 }
