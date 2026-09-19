@@ -23,8 +23,11 @@ public class ProductService {
     /** Redis 中保存商品列表的固定 Key。 */
     public static final String PRODUCT_LIST_CACHE_KEY = "flash-sale:products:on-sale";
 
+    /** Redis 中保存单个商品详情的 Key 前缀。 */
+    private static final String PRODUCT_DETAIL_CACHE_KEY_PREFIX = "flash-sale:product:";
+
     /** 缓存有效期，避免商品数据永久不更新。 */
-    private static final Duration PRODUCT_CACHE_TTL = Duration.ofSeconds(100);
+    private static final Duration PRODUCT_CACHE_TTL = Duration.ofSeconds(500);
 
     private final ProductRepository productRepository;
     private final StringRedisTemplate stringRedisTemplate;
@@ -42,13 +45,13 @@ public class ProductService {
     /**
      * 查询所有上架商品。
      */
-    public List<Product> listOnSaleProducts() {
+    public List<ProductSummary> listOnSaleProducts() {
         String cachedJson = stringRedisTemplate.opsForValue().get(PRODUCT_LIST_CACHE_KEY);
 
         if (cachedJson != null) {
             try {
                 JavaType listType = objectMapper.getTypeFactory()
-                        .constructCollectionType(List.class, Product.class);
+                        .constructCollectionType(List.class, ProductSummary.class);
                 // 缓存命中：直接返回 Redis 中的商品，不访问 MySQL。
                 return objectMapper.readValue(cachedJson, listType);
             } catch (JsonProcessingException exception) {
@@ -58,7 +61,7 @@ public class ProductService {
         }
 
         // 缓存未命中：MySQL 是真实数据来源。
-        List<Product> products = productRepository.findAllOnSale();
+        List<ProductSummary> products = productRepository.findAllOnSaleSummaries();
 
         try {
             String json = objectMapper.writeValueAsString(products);
@@ -75,7 +78,41 @@ public class ProductService {
      * 查询一件正在上架的商品详情。
      */
     public Optional<Product> findOnSaleProduct(Long productId) {
-        return productRepository.findOnSaleById(productId);
+        String cacheKey = productDetailCacheKey(productId);
+        String cachedJson = stringRedisTemplate.opsForValue().get(cacheKey);
+
+        if (cachedJson != null) {
+            try {
+                // Redis 中保存的是一个商品 JSON，因此反序列化成 Product 对象。
+                Product product = objectMapper.readValue(cachedJson, Product.class);
+                return Optional.of(product);
+            } catch (JsonProcessingException exception) {
+                // 缓存内容损坏时删除脏数据，然后继续查询 MySQL。
+                stringRedisTemplate.delete(cacheKey);
+            }
+        }
+
+        Optional<Product> result = productRepository.findOnSaleById(productId);
+
+        if (result.isPresent()) {
+            Product product = result.get();
+            try {
+                String json = objectMapper.writeValueAsString(product);
+                stringRedisTemplate.opsForValue().set(
+                        cacheKey,
+                        json,
+                        PRODUCT_CACHE_TTL);
+            } catch (JsonProcessingException exception) {
+                // 序列化失败不影响本次查询，只是不写入缓存。
+            }
+        }
+
+        return result;
+    }
+
+    /** 根据商品 ID 构造商品详情缓存 Key。 */
+    public static String productDetailCacheKey(Long productId) {
+        return PRODUCT_DETAIL_CACHE_KEY_PREFIX + productId;
     }
 
     /**
@@ -93,14 +130,27 @@ public class ProductService {
      * 创建商品。
      */
     public Product createProduct(CreateProductRequest request) {
-        return productRepository.create(request);
+        Product product = productRepository.create(request);
+
+        // 新增商品会改变商品列表，删除旧列表缓存，下一次查询时重新加载。
+        stringRedisTemplate.delete(PRODUCT_LIST_CACHE_KEY);
+        return product;
     }
 
     /**
      * 修改商品全部信息。商品不存在时返回 Optional.empty()。
      */
     public Optional<Product> updateProduct(Long productId, UpdateProductRequest request) {
-        return productRepository.update(productId, request);
+        Optional<Product> result = productRepository.update(productId, request);
+
+        if (result.isPresent()) {
+            // 修改成功后删除旧列表缓存，避免返回修改前的商品信息。
+            stringRedisTemplate.delete(PRODUCT_LIST_CACHE_KEY);
+            // 同时删除当前商品的详情缓存。
+            stringRedisTemplate.delete(productDetailCacheKey(productId));
+        }
+
+        return result;
     }
 
     /**
@@ -111,6 +161,15 @@ public class ProductService {
             throw new IllegalArgumentException("商品状态只能是 0 或 1");
         }
 
-        return productRepository.updateStatus(productId, status);
+        Optional<Product> result = productRepository.updateStatus(productId, status);
+
+        if (result.isPresent()) {
+            // 上下架会影响“上架商品列表”，因此需要删除列表缓存。
+            stringRedisTemplate.delete(PRODUCT_LIST_CACHE_KEY);
+            // 商品状态变化也会影响商品详情是否可见。
+            stringRedisTemplate.delete(productDetailCacheKey(productId));
+        }
+
+        return result;
     }
 }

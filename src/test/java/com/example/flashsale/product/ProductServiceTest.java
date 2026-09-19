@@ -45,32 +45,32 @@ class ProductServiceTest {
 
     @Test
     void shouldDelegateToRepository() {
-        List<Product> expectedProducts = List.of(new Product());
-        when(productRepository.findAllOnSale()).thenReturn(expectedProducts);
+        List<ProductSummary> expectedProducts = List.of(new ProductSummary());
+        when(productRepository.findAllOnSaleSummaries()).thenReturn(expectedProducts);
         when(stringRedisTemplate.opsForValue()).thenReturn(valueOperations);
         when(valueOperations.get(ProductService.PRODUCT_LIST_CACHE_KEY)).thenReturn(null);
 
-        List<Product> actualProducts = productService.listOnSaleProducts();
+        List<ProductSummary> actualProducts = productService.listOnSaleProducts();
 
         assertSame(expectedProducts, actualProducts);
-        verify(productRepository).findAllOnSale();
+        verify(productRepository).findAllOnSaleSummaries();
     }
 
     @Test
     void shouldReadProductsFromRedisWhenCacheHit() throws Exception {
-        Product product = new Product();
+        ProductSummary product = new ProductSummary();
         product.setId(1L);
         product.setName("缓存商品");
-        List<Product> cachedProducts = List.of(product);
+        List<ProductSummary> cachedProducts = List.of(product);
         String cachedJson = "[{\"id\":1,\"name\":\"缓存商品\"}]";
 
         when(stringRedisTemplate.opsForValue()).thenReturn(valueOperations);
         when(valueOperations.get(ProductService.PRODUCT_LIST_CACHE_KEY)).thenReturn(cachedJson);
-        List<Product> actualProducts = productService.listOnSaleProducts();
+        List<ProductSummary> actualProducts = productService.listOnSaleProducts();
 
         // JSON 反序列化会创建新的 String 对象，所以比较内容应使用 assertEquals。
         assertEquals(cachedProducts.get(0).getName(), actualProducts.get(0).getName());
-        verify(productRepository, org.mockito.Mockito.never()).findAllOnSale();
+        verify(productRepository, org.mockito.Mockito.never()).findAllOnSaleSummaries();
     }
 
     @Test
@@ -78,6 +78,8 @@ class ProductServiceTest {
         Product expectedProduct = new Product();
         expectedProduct.setId(1L);
         expectedProduct.setName("演示机械键盘");
+        when(stringRedisTemplate.opsForValue()).thenReturn(valueOperations);
+        when(valueOperations.get(ProductService.productDetailCacheKey(1L))).thenReturn(null);
         when(productRepository.findOnSaleById(1L))
                 .thenReturn(Optional.of(expectedProduct));
 
@@ -85,6 +87,49 @@ class ProductServiceTest {
 
         assertSame(expectedProduct, actualProduct.orElseThrow());
         verify(productRepository).findOnSaleById(1L);
+    }
+
+    @Test
+    void shouldReadProductDetailFromRedisWhenCacheHit() {
+        String cacheKey = ProductService.productDetailCacheKey(1L);
+        String cachedJson = """
+                {
+                  "id": 1,
+                  "name": "缓存详情商品",
+                  "price": 99.00,
+                  "seckillStock": 20
+                }
+                """;
+
+        when(stringRedisTemplate.opsForValue()).thenReturn(valueOperations);
+        when(valueOperations.get(cacheKey)).thenReturn(cachedJson);
+
+        Optional<Product> result = productService.findOnSaleProduct(1L);
+
+        assertEquals("缓存详情商品", result.orElseThrow().getName());
+        assertEquals(20, result.orElseThrow().getSeckillStock());
+        verify(productRepository, org.mockito.Mockito.never()).findOnSaleById(1L);
+    }
+
+    @Test
+    void shouldReadProductDetailFromDatabaseAndCacheItWhenCacheMiss() throws Exception {
+        Product databaseProduct = new Product();
+        databaseProduct.setId(1L);
+        databaseProduct.setName("数据库详情商品");
+        databaseProduct.setPrice(new BigDecimal("199.00"));
+        when(stringRedisTemplate.opsForValue()).thenReturn(valueOperations);
+        when(valueOperations.get(ProductService.productDetailCacheKey(1L))).thenReturn(null);
+        when(productRepository.findOnSaleById(1L))
+                .thenReturn(Optional.of(databaseProduct));
+
+        Optional<Product> result = productService.findOnSaleProduct(1L);
+
+        assertEquals("数据库详情商品", result.orElseThrow().getName());
+        verify(productRepository).findOnSaleById(1L);
+        verify(valueOperations).set(
+                org.mockito.ArgumentMatchers.eq(ProductService.productDetailCacheKey(1L)),
+                org.mockito.ArgumentMatchers.contains("数据库详情商品"),
+                org.mockito.ArgumentMatchers.any(java.time.Duration.class));
     }
 
     @Test
@@ -149,6 +194,7 @@ class ProductServiceTest {
         assertEquals(10L, actualProduct.getId());
         assertEquals("新增商品", actualProduct.getName());
         verify(productRepository).create(request);
+        verify(stringRedisTemplate).delete(ProductService.PRODUCT_LIST_CACHE_KEY);
     }
 
     @Test
@@ -175,6 +221,8 @@ class ProductServiceTest {
         assertEquals("修改后的商品", actualProduct.orElseThrow().getName());
         assertEquals(300, actualProduct.orElseThrow().getStock());
         verify(productRepository).update(1L, request);
+        verify(stringRedisTemplate).delete(ProductService.PRODUCT_LIST_CACHE_KEY);
+        verify(stringRedisTemplate).delete(ProductService.productDetailCacheKey(1L));
     }
 
     @Test
@@ -189,6 +237,8 @@ class ProductServiceTest {
 
         assertEquals(0, result.orElseThrow().getStatus());
         verify(productRepository).updateStatus(1L, 0);
+        verify(stringRedisTemplate).delete(ProductService.PRODUCT_LIST_CACHE_KEY);
+        verify(stringRedisTemplate).delete(ProductService.productDetailCacheKey(1L));
     }
 
     /** 构造只包含活动时间的商品，避免每个测试重复填写其他字段。 */

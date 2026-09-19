@@ -8,6 +8,7 @@ import org.springframework.test.web.servlet.MockMvc;
 
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 /**
@@ -28,12 +29,16 @@ class ProductControllerTest {
                 .andExpect(status().isOk())
                 .andExpect(content().json("""
                         [{
+                          "id": 1,
                           "name": "演示机械键盘",
                           "price": 299.00,
-                          "seckillPrice": 199.00,
-                          "seckillStock": 100
+                          "seckillPrice": 199.00
                         }]
-                        """));
+                        """))
+                // 列表接口不返回商品描述和库存，详情接口才返回这些字段。
+                .andExpect(jsonPath("$[0].description").doesNotExist())
+                .andExpect(jsonPath("$[0].stock").doesNotExist())
+                .andExpect(jsonPath("$[0].seckillStock").doesNotExist());
     }
 
     @Test

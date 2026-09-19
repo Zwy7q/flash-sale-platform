@@ -25,7 +25,7 @@ public class ProductController {
      * 查询所有上架商品。
      */
     @GetMapping
-    public List<Product> list() {
+    public List<ProductSummary> list() {
         return productService.listOnSaleProducts();
     }
 

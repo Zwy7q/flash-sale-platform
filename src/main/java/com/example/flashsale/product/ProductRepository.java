@@ -27,10 +27,9 @@ public class ProductRepository {
     /**
      * 查询所有上架商品，并按主键升序返回。
      */
-    public List<Product> findAllOnSale() {
+    public List<ProductSummary> findAllOnSaleSummaries() {
         String sql = """
-                SELECT id, name, description, price, seckill_price,
-                       stock, seckill_stock, status,
+                SELECT id, name, price, seckill_price,
                        seckill_start_at, seckill_end_at
                 FROM app_product
                 WHERE status = 1
@@ -38,18 +37,14 @@ public class ProductRepository {
                 """;
 
         return jdbcTemplate.query(sql, (resultSet, rowNumber) -> {
-            Product product = new Product();
-            product.setId(resultSet.getLong("id"));
-            product.setName(resultSet.getString("name"));
-            product.setDescription(resultSet.getString("description"));
-            product.setPrice(resultSet.getBigDecimal("price"));
-            product.setSeckillPrice(resultSet.getBigDecimal("seckill_price"));
-            product.setStock(resultSet.getInt("stock"));
-            product.setSeckillStock(resultSet.getInt("seckill_stock"));
-            product.setStatus(resultSet.getInt("status"));
-            product.setSeckillStartAt(resultSet.getTimestamp("seckill_start_at").toLocalDateTime());
-            product.setSeckillEndAt(resultSet.getTimestamp("seckill_end_at").toLocalDateTime());
-            return product;
+            ProductSummary summary = new ProductSummary();
+            summary.setId(resultSet.getLong("id"));
+            summary.setName(resultSet.getString("name"));
+            summary.setPrice(resultSet.getBigDecimal("price"));
+            summary.setSeckillPrice(resultSet.getBigDecimal("seckill_price"));
+            summary.setSeckillStartAt(resultSet.getTimestamp("seckill_start_at").toLocalDateTime());
+            summary.setSeckillEndAt(resultSet.getTimestamp("seckill_end_at").toLocalDateTime());
+            return summary;
         });
     }
 
