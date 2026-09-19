@@ -26,8 +26,18 @@ public class ProductService {
     /** Redis 中保存单个商品详情的 Key 前缀。 */
     private static final String PRODUCT_DETAIL_CACHE_KEY_PREFIX = "flash-sale:product:";
 
+    /**
+     * Redis 中表示“商品不存在”的特殊值。
+     *
+     * 不能把 Java 的 null 直接保存到 Redis，所以使用一个约定好的字符串表示空结果。
+     */
+    public static final String EMPTY_PRODUCT_CACHE_VALUE = "__EMPTY_PRODUCT__";
+
     /** 缓存有效期，避免商品数据永久不更新。 */
     private static final Duration PRODUCT_CACHE_TTL = Duration.ofSeconds(500);
+
+    /** 空值缓存只保存较短时间，避免商品后来创建后长时间查不到。 */
+    private static final Duration EMPTY_PRODUCT_CACHE_TTL = Duration.ofSeconds(30);
 
     private final ProductRepository productRepository;
     private final StringRedisTemplate stringRedisTemplate;
@@ -82,6 +92,12 @@ public class ProductService {
         String cachedJson = stringRedisTemplate.opsForValue().get(cacheKey);
 
         if (cachedJson != null) {
+            // 命中空值标记：说明最近查询过该 ID，但数据库中没有上架商品。
+            // 直接返回空结果，避免恶意或重复请求不断访问 MySQL。
+            if (EMPTY_PRODUCT_CACHE_VALUE.equals(cachedJson)) {
+                return Optional.empty();
+            }
+
             try {
                 // Redis 中保存的是一个商品 JSON，因此反序列化成 Product 对象。
                 Product product = objectMapper.readValue(cachedJson, Product.class);
@@ -105,6 +121,12 @@ public class ProductService {
             } catch (JsonProcessingException exception) {
                 // 序列化失败不影响本次查询，只是不写入缓存。
             }
+        } else {
+            // 数据库中没有商品时缓存一个短期空值，防止缓存穿透。
+            stringRedisTemplate.opsForValue().set(
+                    cacheKey,
+                    EMPTY_PRODUCT_CACHE_VALUE,
+                    EMPTY_PRODUCT_CACHE_TTL);
         }
 
         return result;

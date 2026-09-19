@@ -16,6 +16,7 @@ import java.time.LocalDateTime;
 import java.math.BigDecimal;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -130,6 +131,36 @@ class ProductServiceTest {
                 org.mockito.ArgumentMatchers.eq(ProductService.productDetailCacheKey(1L)),
                 org.mockito.ArgumentMatchers.contains("数据库详情商品"),
                 org.mockito.ArgumentMatchers.any(java.time.Duration.class));
+    }
+
+    @Test
+    void shouldCacheEmptyValueWhenProductDoesNotExist() {
+        String cacheKey = ProductService.productDetailCacheKey(999L);
+        when(stringRedisTemplate.opsForValue()).thenReturn(valueOperations);
+        when(valueOperations.get(cacheKey)).thenReturn(null);
+        when(productRepository.findOnSaleById(999L)).thenReturn(Optional.empty());
+
+        Optional<Product> result = productService.findOnSaleProduct(999L);
+
+        assertTrue(result.isEmpty());
+        verify(productRepository).findOnSaleById(999L);
+        verify(valueOperations).set(
+                org.mockito.ArgumentMatchers.eq(cacheKey),
+                org.mockito.ArgumentMatchers.eq(ProductService.EMPTY_PRODUCT_CACHE_VALUE),
+                org.mockito.ArgumentMatchers.eq(java.time.Duration.ofSeconds(30)));
+    }
+
+    @Test
+    void shouldNotQueryDatabaseWhenEmptyValueIsCached() {
+        String cacheKey = ProductService.productDetailCacheKey(999L);
+        when(stringRedisTemplate.opsForValue()).thenReturn(valueOperations);
+        when(valueOperations.get(cacheKey))
+                .thenReturn(ProductService.EMPTY_PRODUCT_CACHE_VALUE);
+
+        Optional<Product> result = productService.findOnSaleProduct(999L);
+
+        assertTrue(result.isEmpty());
+        verify(productRepository, org.mockito.Mockito.never()).findOnSaleById(999L);
     }
 
     @Test
