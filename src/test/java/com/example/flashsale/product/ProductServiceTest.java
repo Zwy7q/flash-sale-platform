@@ -9,6 +9,7 @@ import org.mockito.Spy;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.data.redis.core.ValueOperations;
+import org.springframework.data.redis.RedisConnectionFailureException;
 
 import java.util.List;
 import java.util.Optional;
@@ -86,6 +87,19 @@ class ProductServiceTest {
     }
 
     @Test
+    void shouldReadProductListFromDatabaseWhenRedisIsUnavailable() {
+        List<ProductSummary> expectedProducts = List.of(new ProductSummary());
+        when(stringRedisTemplate.opsForValue())
+                .thenThrow(new RedisConnectionFailureException("Redis 暂时不可用"));
+        when(productRepository.findAllOnSaleSummaries()).thenReturn(expectedProducts);
+
+        List<ProductSummary> actualProducts = productService.listOnSaleProducts();
+
+        assertSame(expectedProducts, actualProducts);
+        verify(productRepository).findAllOnSaleSummaries();
+    }
+
+    @Test
     void shouldFindOnSaleProductById() {
         Product expectedProduct = new Product();
         expectedProduct.setId(1L);
@@ -142,6 +156,21 @@ class ProductServiceTest {
                 org.mockito.ArgumentMatchers.eq(ProductService.productDetailCacheKey(1L)),
                 org.mockito.ArgumentMatchers.contains("数据库详情商品"),
                 org.mockito.ArgumentMatchers.any(java.time.Duration.class));
+    }
+
+    @Test
+    void shouldReadProductDetailFromDatabaseWhenRedisIsUnavailable() {
+        Product expectedProduct = new Product();
+        expectedProduct.setId(1L);
+        expectedProduct.setName("MySQL 降级商品");
+        when(stringRedisTemplate.opsForValue())
+                .thenThrow(new RedisConnectionFailureException("Redis 暂时不可用"));
+        when(productRepository.findOnSaleById(1L)).thenReturn(Optional.of(expectedProduct));
+
+        Optional<Product> result = productService.findOnSaleProduct(1L);
+
+        assertSame(expectedProduct, result.orElseThrow());
+        verify(productRepository).findOnSaleById(1L);
     }
 
     @Test

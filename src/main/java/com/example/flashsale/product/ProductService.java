@@ -3,6 +3,7 @@ package com.example.flashsale.product;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.JavaType;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import org.springframework.data.redis.RedisConnectionFailureException;
 import org.springframework.stereotype.Service;
 import org.springframework.data.redis.core.StringRedisTemplate;
 
@@ -60,7 +61,7 @@ public class ProductService {
      * 查询所有上架商品。
      */
     public List<ProductSummary> listOnSaleProducts() {
-        String cachedJson = stringRedisTemplate.opsForValue().get(PRODUCT_LIST_CACHE_KEY);
+        String cachedJson = readCacheValue(PRODUCT_LIST_CACHE_KEY);
 
         if (cachedJson != null) {
             try {
@@ -70,7 +71,7 @@ public class ProductService {
                 return objectMapper.readValue(cachedJson, listType);
             } catch (JsonProcessingException exception) {
                 // 缓存 JSON 损坏时删除脏数据，随后降级查询 MySQL。
-                stringRedisTemplate.delete(PRODUCT_LIST_CACHE_KEY);
+                deleteCacheValue(PRODUCT_LIST_CACHE_KEY);
             }
         }
 
@@ -80,7 +81,7 @@ public class ProductService {
         try {
             String json = objectMapper.writeValueAsString(products);
             // 回填缓存，并设置 TTL，让缓存最终自动失效。
-            stringRedisTemplate.opsForValue().set(
+            writeCacheValue(
                     PRODUCT_LIST_CACHE_KEY,
                     json,
                     randomProductCacheTtl());
@@ -96,7 +97,7 @@ public class ProductService {
      */
     public Optional<Product> findOnSaleProduct(Long productId) {
         String cacheKey = productDetailCacheKey(productId);
-        String cachedJson = stringRedisTemplate.opsForValue().get(cacheKey);
+        String cachedJson = readCacheValue(cacheKey);
 
         if (cachedJson != null) {
             // 命中空值标记：说明最近查询过该 ID，但数据库中没有上架商品。
@@ -111,7 +112,7 @@ public class ProductService {
                 return Optional.of(product);
             } catch (JsonProcessingException exception) {
                 // 缓存内容损坏时删除脏数据，然后继续查询 MySQL。
-                stringRedisTemplate.delete(cacheKey);
+                deleteCacheValue(cacheKey);
             }
         }
 
@@ -121,7 +122,7 @@ public class ProductService {
             Product product = result.get();
             try {
                 String json = objectMapper.writeValueAsString(product);
-                stringRedisTemplate.opsForValue().set(
+                writeCacheValue(
                         cacheKey,
                         json,
                         randomProductCacheTtl());
@@ -130,7 +131,7 @@ public class ProductService {
             }
         } else {
             // 数据库中没有商品时缓存一个短期空值，防止缓存穿透。
-            stringRedisTemplate.opsForValue().set(
+            writeCacheValue(
                     cacheKey,
                     EMPTY_PRODUCT_CACHE_VALUE,
                     EMPTY_PRODUCT_CACHE_TTL);
@@ -166,6 +167,41 @@ public class ProductService {
         int jitterSeconds = ThreadLocalRandom.current()
                 .nextInt(PRODUCT_CACHE_TTL_JITTER_MAX_SECONDS + 1);
         return productCacheTtlWithJitter(jitterSeconds);
+    }
+
+    /**
+     * 安全读取 Redis 缓存。
+     *
+     * Redis 暂时不可用时，把它视为“缓存未命中”，后续业务会查询 MySQL。
+     */
+    private String readCacheValue(String cacheKey) {
+        try {
+            return stringRedisTemplate.opsForValue().get(cacheKey);
+        } catch (RedisConnectionFailureException exception) {
+            return null;
+        }
+    }
+
+    /**
+     * 安全写入 Redis 缓存。
+     *
+     * 缓存是性能优化而非唯一数据来源，写入失败不能影响本次 MySQL 查询结果。
+     */
+    private void writeCacheValue(String cacheKey, String value, Duration ttl) {
+        try {
+            stringRedisTemplate.opsForValue().set(cacheKey, value, ttl);
+        } catch (RedisConnectionFailureException exception) {
+            // Redis 恢复后，后续请求会重新回填缓存。
+        }
+    }
+
+    /** Redis 不可用时，删除缓存失败也不影响商品查询。 */
+    private void deleteCacheValue(String cacheKey) {
+        try {
+            stringRedisTemplate.delete(cacheKey);
+        } catch (RedisConnectionFailureException exception) {
+            // 缓存服务恢复后，由 TTL 或下一次写入处理旧缓存。
+        }
     }
 
     /**
