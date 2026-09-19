@@ -2,7 +2,10 @@ package com.example.flashsale.seckill;
 
 import com.example.flashsale.product.ProductRepository;
 import org.springframework.data.redis.core.StringRedisTemplate;
+import org.springframework.data.redis.core.script.DefaultRedisScript;
 import org.springframework.stereotype.Service;
+
+import java.util.List;
 
 /**
  * 秒杀库存 Redis 服务。
@@ -14,6 +17,39 @@ import org.springframework.stereotype.Service;
 public class StockRedisService {
 
     private static final String STOCK_KEY_PREFIX = "flash-sale:stock:";
+
+    /**
+     * Lua 原子扣减库存脚本。
+     *
+     * 返回值约定：
+     *  1：库存扣减成功；
+     *  0：库存已售罄；
+     * -1：Redis 中尚未预热该商品库存。
+     */
+    private static final DefaultRedisScript<Long> STOCK_DEDUCTION_SCRIPT =
+            new DefaultRedisScript<>();
+
+    static {
+        STOCK_DEDUCTION_SCRIPT.setScriptText("""
+                -- KEYS[1] 是当前商品的秒杀库存 Key。
+                local stock = redis.call('GET', KEYS[1])
+
+                -- 库存 Key 不存在时，说明还没有执行库存预热。
+                if not stock then
+                    return -1
+                end
+
+                -- 库存已经为 0 时，不能继续扣减，避免出现负库存。
+                if tonumber(stock) <= 0 then
+                    return 0
+                end
+
+                -- 只有库存充足时才扣减 1，整段 Lua 脚本在 Redis 中原子执行。
+                redis.call('DECR', KEYS[1])
+                return 1
+                """);
+        STOCK_DEDUCTION_SCRIPT.setResultType(Long.class);
+    }
 
     private final StringRedisTemplate stringRedisTemplate;
     private final ProductRepository productRepository;
@@ -60,5 +96,19 @@ public class StockRedisService {
                 .orElseThrow(() -> new IllegalArgumentException("商品不存在或未上架：" + productId));
 
         setStock(productId, stock);
+    }
+
+    /**
+     * 使用 Lua 脚本尝试预扣一件秒杀库存。
+     *
+     * 脚本返回 1 时才表示预扣成功；库存不足和未预热都先返回 false。
+     * 下一阶段会增加更细的失败原因，例如“该用户已购买过”。
+     */
+    public boolean tryDeductStock(Long productId) {
+        Long scriptResult = stringRedisTemplate.execute(
+                STOCK_DEDUCTION_SCRIPT,
+                List.of(stockKey(productId)));
+
+        return Long.valueOf(1L).equals(scriptResult);
     }
 }
