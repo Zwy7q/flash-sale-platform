@@ -28,5 +28,29 @@ services:
       # Redis 容器内部默认使用 6379，主机也使用 6379。
       - "6379:6379"
 
+  rabbitmq:
+    # management 版本附带网页管理后台，便于观察队列和消息。
+    image: rabbitmq:3.13-management
+    container_name: flash-sale-rabbitmq
+    hostname: flash-sale-rabbitmq
+    restart: unless-stopped
+    environment:
+      # 仅用于本地教学；避免使用只能从容器内部连接的默认 guest 账号。
+      RABBITMQ_DEFAULT_USER: flashsale
+      RABBITMQ_DEFAULT_PASS: flashsale123456
+    ports:
+      # 5672 给 Java 连接；15672 给浏览器管理后台使用。
+      - "5672:5672"
+      - "15672:15672"
+    volumes:
+      - flash-sale-rabbitmq-data:/var/lib/rabbitmq
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 30s
+
 volumes:
   flash-sale-mysql-data:
+  flash-sale-rabbitmq-data:

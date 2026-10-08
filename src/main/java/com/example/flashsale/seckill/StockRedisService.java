@@ -141,6 +141,26 @@ public class StockRedisService {
     }
 
     /**
+     * 确保商品库存已经预热到 Redis。
+     *
+     * setIfAbsent 对应 Redis 的 SETNX：只有 Key 不存在时才写入。
+     * 即使多个首批请求并发执行，也不会覆盖 Lua 已经扣减过的库存。
+     */
+    public void ensureStockWarmUp(Long productId) {
+        String key = stockKey(productId);
+        String cachedStock = stringRedisTemplate.opsForValue().get(key);
+
+        if (cachedStock != null) {
+            return;
+        }
+
+        Integer databaseStock = productRepository.findSeckillStockById(productId)
+                .orElseThrow(() -> new IllegalArgumentException("商品不存在或未上架：" + productId));
+
+        stringRedisTemplate.opsForValue().setIfAbsent(key, String.valueOf(databaseStock));
+    }
+
+    /**
      * 使用 Lua 脚本尝试预扣一件秒杀库存。
      *
      * 脚本返回 1 时才表示预扣成功；库存不足和未预热都先返回 false。

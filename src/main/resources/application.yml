@@ -23,6 +23,15 @@ spring:
       host: localhost
       port: 6379
 
+  rabbitmq:
+    host: localhost
+    port: 5672
+    username: flashsale
+    password: flashsale123456
+    # 默认虚拟主机，相当于 RabbitMQ 内的一套独立消息资源空间。
+    virtual-host: /
+    connection-timeout: 5s
+
   jwt:
     # 教学环境密钥。生产环境必须通过环境变量或密钥管理服务注入。
     secret: flash-sale-demo-secret-key-change-in-production

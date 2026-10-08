@@ -40,6 +40,12 @@
             <artifactId>spring-boot-starter-data-redis</artifactId>
         </dependency>
 
+        <!-- AMQP：提供 RabbitTemplate 发送消息，以及 @RabbitListener 消费消息。 -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-amqp</artifactId>
+        </dependency>
+
         <!-- MySQL 驱动：让 Java 程序能够连接 MySQL 8 -->
         <dependency>
             <groupId>com.mysql</groupId>

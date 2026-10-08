@@ -26,7 +26,7 @@ public class WebConfig implements WebMvcConfigurer {
     public void addInterceptors(InterceptorRegistry registry) {
         registry.addInterceptor(jwtAuthenticationInterceptor)
                 // 管理员接口也必须先完成 JWT 认证，才能把用户 ID 放入 request。
-                .addPathPatterns("/api/users/me", "/api/admin/**");
+                .addPathPatterns("/api/users/me", "/api/admin/**", "/api/seckill/**");
 
         registry.addInterceptor(adminAuthorizationInterceptor)
                 // 只有管理员路径需要额外进行管理员身份判断。
