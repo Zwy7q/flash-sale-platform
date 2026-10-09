@@ -17,6 +17,27 @@ import java.util.Optional;
 @Repository
 public class ProductRepository {
 
+    /**
+     * 锁定商品行直到事务结束。同一商品的下单任务依次进入库存与订单处理。
+     * 必须由带事务的 Service 调用，脱离事务使用无法持续持有锁。
+     * 不重新检查上下架和活动时间：未来消费者处理的是请求时已获得资格的任务。
+     */
+    public boolean lockForOrder(Long productId) {
+        List<Long> ids = jdbcTemplate.query(
+                "SELECT id FROM app_product WHERE id = ? FOR UPDATE",
+                (resultSet, rowNumber) -> resultSet.getLong("id"), productId);
+        return !ids.isEmpty();
+    }
+
+    /** 在数据库中做带条件的扣减，库存为 0 时不会减成负数。 */
+    public boolean deductSeckillStock(Long productId) {
+        int affectedRows = jdbcTemplate.update("""
+                UPDATE app_product SET seckill_stock = seckill_stock - 1
+                WHERE id = ? AND seckill_stock > 0
+                """, productId);
+        return affectedRows == 1;
+    }
+
 
     private final JdbcTemplate jdbcTemplate;
 

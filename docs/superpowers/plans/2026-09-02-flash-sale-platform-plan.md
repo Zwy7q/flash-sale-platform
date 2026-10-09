@@ -246,7 +246,7 @@ POST /api/seckill/products/{productId}
 - [ ] **11A：基础收发。** 添加 AMQP 依赖、RabbitMQ Docker 服务和连接配置；使用独立教学队列、文本生产者和日志消费者。真实集成测试不连接 MySQL/Redis。测试与教学监听器使用 `rabbitmq-demo` profile；本步不改变秒杀请求链路。
 - [ ] **11B：订单基础。** 设计订单表、状态、Repository 和业务唯一约束。SQL 编号以现有目录为准，避免覆盖已有种子脚本。
   - [x] 11B-1：`007_create_app_order.sql`、OrderStatus、SeckillOrder、OrderRepository；插入、用户隔离、请求编号及重复购买约束四项真实 MySQL 验证通过。
-  - [ ] 11B-2：OrderService 在同一 MySQL 事务内扣减库存并创建订单，验证失败回滚及幂等处理。
+  - [x] 11B-2：OrderService 在同一 MySQL 事务内扣减库存并创建订单；商品行锁、请求编号当前读、重复任务返回原订单，验证失败回滚和并发处理。教学说明见 `docs/11B-2-order-transaction.md`。
 - [ ] **11C：接入业务消息。** Lua 成功后发送秒杀消息，消费者创建订单，提供排队结果查询；明确发送异常和库存补偿策略，避免成功响应但消息未入队。
 - [ ] **11D：可靠性。** 发送确认、消费幂等、失败重试、死信队列、库存与购买资格补偿及并发验证。
 
@@ -360,7 +360,7 @@ POST /api/users
 
 ## 五、当前下一步
 
-当前已完成 **11B-1：订单持久化基础**，说明见 `docs/11B-order-basics.md`。
-用户理解并验证后，进入 11B-2：Service 事务内扣减 MySQL 库存并创建订单。
-之后再进入 11C 接入真实秒杀消息。RabbitMQ 基础收发说明仍见
+当前已完成 **11B-2：MySQL 事务下单基础**，说明见 `docs/11B-2-order-transaction.md`。
+用户理解并验证后，进入 11C 接入真实秒杀消息；明确发送失败和库存补偿边界。
+RabbitMQ 基础收发说明仍见
 `docs/11A-rabbitmq-learning.md`；真实验证结果以当次执行输出为准。

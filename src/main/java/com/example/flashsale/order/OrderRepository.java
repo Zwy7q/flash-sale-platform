@@ -12,6 +12,29 @@ import java.util.Optional;
 /** 订单数据访问层：只负责 SQL；库存校验、事务和消息幂等由后续业务层组织。 */
 @Repository
 public class OrderRepository {
+    /**
+     * 消费任务时按请求编号查询已创建订单；FOR UPDATE 使用当前读。
+     * 必须在事务内调用，避免 MySQL 可重复读下使用旧快照判断重复任务。
+     * 只返回幂等检查需要的字段，不作为对外查询接口。
+     */
+    public Optional<SeckillOrder> findByRequestIdForUpdate(String requestId) {
+        List<SeckillOrder> orders = jdbcTemplate.query("""
+                SELECT id, user_id, product_id, amount FROM app_order
+                WHERE request_id = ? FOR UPDATE
+                """, (resultSet, rowNumber) -> {
+            SeckillOrder order = new SeckillOrder();
+            order.setId(resultSet.getLong("id"));
+            order.setUserId(resultSet.getLong("user_id"));
+            order.setProductId(resultSet.getLong("product_id"));
+            order.setAmount(resultSet.getBigDecimal("amount"));
+            return order;
+        }, requestId);
+        if (orders.isEmpty()) {
+            return Optional.empty();
+        }
+        return Optional.of(orders.get(0));
+    }
+
     private final JdbcTemplate jdbcTemplate;
 
     public OrderRepository(JdbcTemplate jdbcTemplate) {

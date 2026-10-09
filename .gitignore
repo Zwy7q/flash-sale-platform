@@ -4,7 +4,8 @@
 
 # Maven 编译输出
 target/
-
+#计划文档
+docs/
 # 本机 Maven 配置，路径因电脑而异
 maven-settings.xml
 
