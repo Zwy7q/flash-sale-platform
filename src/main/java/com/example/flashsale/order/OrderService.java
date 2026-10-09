@@ -11,6 +11,70 @@ import java.util.List;
 /** 订单业务层：消费者事务下单，以及当前登录用户的订单查询。 */
 @Service
 public class OrderService {
+    /**
+     * 只负责取消的 MySQL 部分：状态变更和归还库存必须一起提交或一起回滚。
+     * Redis 释放由 OrderCancellationService 在本方法事务提交后执行。
+     */
+    @Transactional
+    public Optional<SeckillOrder> cancelMyOrder(Long orderId, Long currentUserId) {
+        // 先确认归属并取得商品 ID，此时尚不锁订单，也不依据这次读取判断最终状态。
+        Optional<SeckillOrder> initialResult = orderRepository.findByIdAndUserId(orderId, currentUserId);
+        if (initialResult.isEmpty()) {
+            return Optional.empty();
+        }
+        Long productId = initialResult.get().getProductId();
+        // 与消费者下单保持“先商品，后订单”的加锁顺序，减少互相等待导致的死锁。
+        if (!productRepository.lockForOrder(productId)) {
+            throw new IllegalStateException("取消订单时对应商品不存在，请核对数据");
+        }
+        Optional<SeckillOrder> latestResult = orderRepository.findByIdAndUserIdForUpdate(orderId, currentUserId);
+        if (latestResult.isEmpty()) {
+            return Optional.empty();
+        }
+        SeckillOrder order = latestResult.get();
+        if (order.getStatus() == OrderStatus.CANCELLED) {
+            // 重复取消不再次归还 MySQL 库存；外层仍可重试未完成的 Redis 释放。
+            return latestResult;
+        }
+        if (order.getStatus() != OrderStatus.PENDING_PAYMENT) {
+            throw new OrderNotCancellableException("只有待支付订单才能取消");
+        }
+        int affectedRows = orderRepository.markCancelled(orderId, currentUserId);
+        if (affectedRows != 1) {
+            throw new OrderNotCancellableException("订单状态已变化，不能取消");
+        }
+        if (!productRepository.restoreSeckillStock(productId)) {
+            // 运行时异常回滚刚才的 CANCELLED 状态，避免只取消却没有归还 MySQL 库存。
+            throw new IllegalStateException("归还 MySQL 秒杀库存失败");
+        }
+        return orderRepository.findByIdAndUserIdForUpdate(orderId, currentUserId);
+    }
+
+    /** 模拟支付：只推进订单状态，不调用第三方支付，也不再次扣减库存。 */
+    @Transactional
+    public Optional<SeckillOrder> payMyOrder(Long orderId, Long currentUserId) {
+        // 锁定“属于当前用户”的订单，锁一直保持到整个事务提交或回滚。
+        Optional<SeckillOrder> result = orderRepository.findByIdAndUserIdForUpdate(orderId, currentUserId);
+        if (result.isEmpty()) {
+            return Optional.empty();
+        }
+        SeckillOrder order = result.get();
+        if (order.getStatus() == OrderStatus.PAID) {
+            // 幂等：客户端重试或重复点击时返回原订单，不重复执行支付更新。
+            return result;
+        }
+        if (order.getStatus() != OrderStatus.PENDING_PAYMENT) {
+            throw new OrderNotPayableException("订单已关闭，不能支付");
+        }
+        int affectedRows = orderRepository.markPaid(orderId, currentUserId);
+        if (affectedRows != 1) {
+            // 运行时异常触发事务回滚，不能向客户端报告支付成功。
+            throw new OrderNotPayableException("订单状态已变化，不能支付");
+        }
+        // 重新查询，返回数据库实际状态和 updated_at，而不是自行编造更新时间。
+        return orderRepository.findByIdAndUserIdForUpdate(orderId, currentUserId);
+    }
+
     /** 当前阶段采用简单列表，后续订单量增大再增加分页。 */
     public List<SeckillOrder> listMyOrders(Long currentUserId) {
         return orderRepository.findAllByUserId(currentUserId);

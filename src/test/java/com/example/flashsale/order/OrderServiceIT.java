@@ -57,6 +57,17 @@ class OrderServiceIT {
     }
 
     @Test
+    void shouldRollBackCancellationWhenDatabaseStockRestoreFails() {
+        Long id = service.createOrder(UUID.randomUUID().toString(), 990101L, productId, amount);
+        // INT 已达上限，归还库存会触发真实 SQL 异常，验证前面的状态更新也被回滚。
+        jdbc.update("UPDATE app_product SET seckill_stock = 2147483647 WHERE id = ?", productId);
+        assertThrows(org.springframework.dao.DataAccessException.class,
+                () -> service.cancelMyOrder(id, 990101L));
+        assertEquals(OrderStatus.PENDING_PAYMENT, orders.findByIdAndUserId(id, 990101L).get().getStatus());
+        assertEquals(Integer.MAX_VALUE, remainingStock());
+    }
+
+    @Test
     void shouldCommitOrderAndStockTogether() {
         Long id = service.createOrder(UUID.randomUUID().toString(), 990101L, productId, amount);
         assertEquals(1, remainingStock());
@@ -145,6 +156,37 @@ class OrderServiceIT {
             return true;
         } catch (IllegalStateException soldOut) {
             return false;
+        }
+    }
+
+    @Test
+    void shouldPaySameOrderConcurrentlyWithoutDeductingStockAgain() throws Exception {
+        Long orderId = service.createOrder(UUID.randomUUID().toString(), 990101L, productId, amount);
+        ExecutorService pool = Executors.newFixedThreadPool(2);
+        CountDownLatch start = new CountDownLatch(1);
+        // 每个线程分别经过 Spring 事务代理，真实提交；没有外层测试事务。
+        Callable<SeckillOrder> payment = () -> {
+            start.await();
+            return service.payMyOrder(orderId, 990101L).get();
+        };
+        try {
+            Future<SeckillOrder> first = pool.submit(payment);
+            Future<SeckillOrder> second = pool.submit(payment);
+            start.countDown();
+            SeckillOrder firstResult = first.get(10, TimeUnit.SECONDS);
+            SeckillOrder secondResult = second.get(10, TimeUnit.SECONDS);
+            assertEquals(orderId, firstResult.getId());
+            assertEquals(orderId, secondResult.getId());
+            assertEquals(OrderStatus.PAID, firstResult.getStatus());
+            assertEquals(OrderStatus.PAID, secondResult.getStatus());
+            assertEquals(firstResult.getUpdatedAt(), secondResult.getUpdatedAt());
+            assertEquals(OrderStatus.PAID, orders.findByIdAndUserId(orderId, 990101L).get().getStatus());
+            assertEquals(1, remainingStock());
+            assertEquals(1, jdbc.queryForObject("SELECT COUNT(*) FROM app_order WHERE product_id = ?",
+                    Integer.class, productId));
+        } finally {
+            pool.shutdownNow();
+            assertTrue(pool.awaitTermination(10, TimeUnit.SECONDS));
         }
     }
 }

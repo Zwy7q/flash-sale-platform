@@ -102,10 +102,40 @@ public class OrderRepository {
 
     /** 同时限制订单 ID 和所属用户，避免普通用户查询别人的订单。 */
     public Optional<SeckillOrder> findByIdAndUserId(Long orderId, Long userId) {
+        return queryOwnedOrder(orderId, userId, false);
+    }
+
+    /** 支付事务使用当前读并锁住这一行，其他修改同一订单的事务需要等待。 */
+    public Optional<SeckillOrder> findByIdAndUserIdForUpdate(Long orderId, Long userId) {
+        return queryOwnedOrder(orderId, userId, true);
+    }
+
+    /** 只允许待支付变成已支付；再次用 SQL 条件防止覆盖其他终态。 */
+    public int markPaid(Long orderId, Long userId) {
+        return jdbcTemplate.update("""
+                UPDATE app_order SET status = 'PAID'
+                WHERE id = ? AND user_id = ? AND status = 'PENDING_PAYMENT'
+                """, orderId, userId);
+    }
+
+    /** 只有待支付状态能取消；受影响行数为 1 才表示这次真正完成状态变更。 */
+    public int markCancelled(Long orderId, Long userId) {
+        return jdbcTemplate.update("""
+                UPDATE app_order SET status = 'CANCELLED'
+                WHERE id = ? AND user_id = ? AND status = 'PENDING_PAYMENT'
+                """, orderId, userId);
+    }
+
+    /** 普通查询和加锁查询共用同一套行映射，避免复制所有字段转换代码。 */
+    private Optional<SeckillOrder> queryOwnedOrder(Long orderId, Long userId, boolean lock) {
         String sql = """
                 SELECT id, request_id, user_id, product_id, amount, status, created_at, updated_at
                 FROM app_order WHERE id = ? AND user_id = ?
                 """;
+        if (lock) {
+            // 该后缀由程序内部决定，不拼接用户输入；必须在 Service 事务内使用。
+            sql = sql + " FOR UPDATE";
+        }
         List<SeckillOrder> orders = jdbcTemplate.query(sql, statement -> {
             statement.setLong(1, orderId);
             statement.setLong(2, userId);

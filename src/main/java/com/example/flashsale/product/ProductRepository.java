@@ -56,6 +56,14 @@ public class ProductRepository {
         return affectedRows == 1;
     }
 
+    /** 取消一件商品的订单后归还一件秒杀库存；普通 stock 字段在下单时未扣，故不修改。 */
+    public boolean restoreSeckillStock(Long productId) {
+        int affectedRows = jdbcTemplate.update("""
+                UPDATE app_product SET seckill_stock = seckill_stock + 1 WHERE id = ?
+                """, productId);
+        return affectedRows == 1;
+    }
+
 
     private final JdbcTemplate jdbcTemplate;
 

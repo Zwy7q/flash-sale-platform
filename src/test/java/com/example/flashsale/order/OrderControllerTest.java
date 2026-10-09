@@ -7,12 +7,15 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.test.web.servlet.MockMvc;
+import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.transaction.annotation.Transactional;
 import java.math.BigDecimal;
 import java.util.UUID;
 import java.util.concurrent.ThreadLocalRandom;
 
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
 
 /** 一个类测试订单查询权限和真实 MySQL 映射；测试数据结束后自动回滚。 */
@@ -23,6 +26,7 @@ class OrderControllerTest {
     @Autowired private MockMvc mvc;
     @Autowired private JwtTokenService jwt;
     @Autowired private OrderRepository repository;
+    @Autowired private JdbcTemplate jdbc;
     private Long userId;
     private Long firstOrderId;
     private Long secondOrderId;
@@ -42,6 +46,45 @@ class OrderControllerTest {
 
     private String authorization(Long id) {
         return "Bearer " + jwt.generateToken(id);
+    }
+
+    @Test
+    void shouldPayOwnOrderAndReturnSameResultOnRepeat() throws Exception {
+        // 连续支付两次，第二次也应成功，但不能创建新订单或重新改变金额。
+        for (int attempt = 0; attempt < 2; attempt++) {
+            mvc.perform(post("/api/orders/{id}/pay", firstOrderId)
+                    .header("Authorization", authorization(userId)))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.id").value(firstOrderId))
+                    .andExpect(jsonPath("$.amount").value(129.00))
+                    .andExpect(jsonPath("$.status").value("PAID"));
+        }
+        assertEquals(OrderStatus.PAID, repository.findByIdAndUserId(firstOrderId, userId).get().getStatus());
+    }
+
+    @Test
+    void shouldRejectForeignMissingAndUnauthenticatedPayment() throws Exception {
+        mvc.perform(post("/api/orders/{id}/pay", otherOrderId)
+                .header("Authorization", authorization(userId))).andExpect(status().isNotFound());
+        mvc.perform(post("/api/orders/{id}/pay", -1L)
+                .header("Authorization", authorization(userId))).andExpect(status().isNotFound());
+        mvc.perform(post("/api/orders/{id}/pay", firstOrderId)).andExpect(status().isUnauthorized());
+        assertEquals(OrderStatus.PENDING_PAYMENT,
+                repository.findByIdAndUserId(otherOrderId, userId + 1).get().getStatus());
+    }
+
+    @Test
+    void shouldRejectPaymentForClosedOrders() throws Exception {
+        // 这里只准备关闭状态数据；取消和超时接口将在后续阶段实现。
+        for (String closedStatus : new String[]{"CANCELLED", "PAYMENT_TIMEOUT"}) {
+            jdbc.update("UPDATE app_order SET status = ? WHERE id = ?", closedStatus, firstOrderId);
+            mvc.perform(post("/api/orders/{id}/pay", firstOrderId)
+                    .header("Authorization", authorization(userId)))
+                    .andExpect(status().isConflict())
+                    .andExpect(jsonPath("$.code").value("ORDER_NOT_PAYABLE"));
+            assertEquals(closedStatus,
+                    repository.findByIdAndUserId(firstOrderId, userId).get().getStatus().name());
+        }
     }
 
     @Test

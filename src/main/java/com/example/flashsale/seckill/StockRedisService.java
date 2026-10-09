@@ -20,6 +20,9 @@ public class StockRedisService {
 
     private static final String PURCHASE_KEY_PREFIX = "flash-sale:purchase:";
 
+    /** 每笔订单单独记录释放结果，不设置 TTL，避免标记过期后重复归还。 */
+    private static final DefaultRedisScript<Long> STOCK_RELEASE_SCRIPT = new DefaultRedisScript<>();
+
     /**
      * Lua 原子扣减库存脚本。
      *
@@ -41,6 +44,29 @@ public class StockRedisService {
             new DefaultRedisScript<>();
 
     static {
+        STOCK_RELEASE_SCRIPT.setScriptText("""
+                -- KEYS[1] 是商品库存，KEYS[2] 是这笔订单的释放标记。
+                local releaseStatus = redis.call('GET', KEYS[2])
+                if releaseStatus == '1' then
+                    return 0
+                end
+                -- 曾发现库存缺失或异常标记时，后续即使 Key 重建，也必须人工核对。
+                if releaseStatus then
+                    return -1
+                end
+                -- 库存缺失时不能盲目 INCR，否则会凭空建立值为 1 的库存。
+                if redis.call('EXISTS', KEYS[1]) == 0 then
+                    -- 防止稍后按已归还的 MySQL 库存重建后，重试又额外加一次。
+                    redis.call('SET', KEYS[2], 'RECONCILE')
+                    return -1
+                end
+                -- INCR 成功后才记录释放成功；损坏的库存会在这里报错，不会写成功标记。
+                redis.call('INCR', KEYS[1])
+                redis.call('SET', KEYS[2], '1')
+                return 1
+                """);
+        STOCK_RELEASE_SCRIPT.setResultType(Long.class);
+
         STOCK_DEDUCTION_SCRIPT.setScriptText("""
                 -- KEYS[1] 是当前商品的秒杀库存 Key。
                 local stock = redis.call('GET', KEYS[1])
@@ -108,6 +134,22 @@ public class StockRedisService {
     /** 构造“用户已经购买过某商品”的 Redis Key。 */
     public String purchaseKey(Long productId, Long userId) {
         return PURCHASE_KEY_PREFIX + productId + ":" + userId;
+    }
+
+    /**
+     * 仅在 MySQL 已确认订单取消后调用，同一订单最多归还一次 Redis 库存。
+     * 保留购买标记：本阶段数据库唯一约束仍然不允许取消后重新购买同一商品。
+     */
+    public void releaseCancelledOrderStock(Long productId, Long orderId) {
+        Long result = stringRedisTemplate.execute(STOCK_RELEASE_SCRIPT,
+                List.of(stockKey(productId), "flash-sale:stock-release:" + orderId));
+        if (Long.valueOf(1L).equals(result) || Long.valueOf(0L).equals(result)) {
+            return;
+        }
+        if (Long.valueOf(-1L).equals(result)) {
+            throw new IllegalStateException("Redis 库存 Key 缺失，停止自动归还，需核对预扣记录");
+        }
+        throw new IllegalStateException("Redis 库存释放结果未知：" + result);
     }
 
     /**
