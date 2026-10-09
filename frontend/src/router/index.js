@@ -7,11 +7,13 @@ import WelcomeView from '../views/WelcomeView.vue'
 import SessionView from '../views/SessionView.vue'
 import AccessView from '../views/AccessView.vue'
 import MainLayout from '../layouts/MainLayout.vue'
+import ProductListView from '../views/ProductListView.vue'
+import ProductDetailView from '../views/ProductDetailView.vue'
 
 export const router = createRouter({
   history: createWebHistory(),
   routes: [
-    { path: '/', redirect: '/welcome' },
+    { path: '/', redirect: '/products' },
     { path: '/login', component: LoginView, meta: { public: true } },
     { path: '/register', component: RegisterView, meta: { public: true } },
     { path: '/session', component: SessionView, meta: { public: true } },
@@ -19,6 +21,8 @@ export const router = createRouter({
       path: '/', component: MainLayout,
       children: [
         { path: 'welcome', component: WelcomeView },
+        { path: 'products', component: ProductListView },
+        { path: 'products/:id', component: ProductDetailView },
         // 15B 只提供身份确认页，不提前实现管理商品和统计业务。
         { path: 'admin', component: AccessView, meta: { admin: true } },
         { path: 'forbidden', component: AccessView, meta: { denied: true } },

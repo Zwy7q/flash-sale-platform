@@ -1,7 +1,7 @@
-# 秒杀平台 Vue 前端 · 15B
+# 秒杀平台 Vue 前端 · 15C
 
-独立 Vue 工程，Spring Boot 在父目录。当前已完成登录、注册、JWT 会话、权限导航和健康检查。
-后续按父目录 FRONTEND_PLAN.md 逐步完成商品、订单与管理页面。教学见 LEARNING_15B.md。
+独立 Vue 工程，Spring Boot 在父目录。当前已完成账户、商品列表/详情、秒杀与异步结果查询。
+后续按父目录 FRONTEND_PLAN.md 完成订单与管理页面。教学见 LEARNING_15B.md 和 LEARNING_15C.md。
 
 ## 启动
 
@@ -14,7 +14,8 @@ npm run dev
 ```
 
 首次获取工程或 lockfile 改变时执行 npm ci。依赖已安装且未变化时直接 npm run dev。
-打开 http://localhost:5173/login，登录后显示账户首页，可以点击“检查连接”。
+打开 http://localhost:5173/products，未登录先跳登录，成功后进入商品列表。
+账户首页 /welcome 保留用户资料和“检查连接”。详情路径为 /products/商品ID。
 本阶段修改了 Java 响应，已运行的 IDEA 后端需要重启。
 不要同时启动两份 Vite；5173 占用时先确认是否已有本工程运行。
 官方 npm 源超时时可仅为当前安装指定镜像，不改全局配置：
@@ -88,5 +89,6 @@ npm run build
 当前 /api 代理只配置在开发服务器，生产需另外配置反向代理。
 修改 .env.development 或 vite.config.js 后重启 npm run dev。
 
-10 项前端测试集中于 src/auth.test.js。当前全量引入 Element Plus，构建可能提示 chunk 较大。
-理解并验收后进入 15C：商品展示与异步秒杀。Git 提交/推送由用户自行执行。
+21 项前端测试集中于 src/auth.test.js 和 src/seckill.test.js。当前全量引入 Element Plus，构建可能提示 chunk 较大。
+秒杀的手工验收、取消后重复测试和代码阅读顺序见 LEARNING_15C.md。
+理解并验收后进入 15D：我的订单、模拟支付与取消。Git 提交/推送由用户自行执行。

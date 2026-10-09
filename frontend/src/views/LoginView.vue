@@ -27,7 +27,8 @@ async function submit() {
     const loggedIn = await auth.login({ username: form.username.trim(), password: form.password })
     if (loggedIn) {
       form.password = ''
-      await router.replace(safeRedirect(route.query.redirect))
+      // 有登录前的目标就回到目标，否则进入商品列表。
+      await router.replace(safeRedirect(route.query.redirect || '/products'))
     }
   } catch (exception) {
     if (exception.response && exception.response.status === 401) {
