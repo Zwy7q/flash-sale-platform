@@ -6,6 +6,7 @@ import org.springframework.amqp.rabbit.config.SimpleRabbitListenerContainerFacto
 import org.springframework.amqp.rabbit.connection.ConnectionFactory;
 import org.springframework.amqp.rabbit.retry.RejectAndDontRequeueRecoverer;
 import org.springframework.boot.autoconfigure.amqp.SimpleRabbitListenerContainerFactoryConfigurer;
+import org.springframework.boot.autoconfigure.amqp.RabbitTemplateCustomizer;
 import org.springframework.amqp.rabbit.annotation.EnableRabbit;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
@@ -19,6 +20,12 @@ import java.util.Map;
 @EnableRabbit
 @Profile("seckill-mq")
 public class SeckillRabbitConfig {
+    @Bean
+    public RabbitTemplateCustomizer mandatoryOrderMessages() {
+        // 找不到目标队列时必须退回消息，不能静默丢弃后仍只收到 broker ACK。
+        return template -> template.setMandatory(true);
+    }
+
     @Bean
     public Queue seckillOrderQueue(@Value("${app.mq.order-queue:flash-sale.orders.create}") String name) {
         // 测试可以覆盖队列名，避免消费人工测试或业务队列中的消息。

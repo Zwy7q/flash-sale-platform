@@ -1,0 +1,12 @@
+# 仅启用 seckill-mq 配置时加载，不影响文本教学阶段的普通启动。
+spring:
+  rabbitmq:
+    # correlated：每条发送消息都有对应的确认结果。
+    publisher-confirm-type: correlated
+    # 配合 RabbitTemplate mandatory，让无法路由的消息退回生产者。
+    publisher-returns: true
+
+app:
+  mq:
+    # 等待确认的上限，不包含建立连接等操作的全部时间。
+    confirm-timeout-ms: 5000
