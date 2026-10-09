@@ -6,7 +6,7 @@ import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMock
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.test.web.servlet.MockMvc;
 
-import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 /**
@@ -24,7 +24,7 @@ class AdminAuthorizationIntegrationTest {
 
     @Test
     void shouldReturn401WhenAdminRequestHasNoToken() throws Exception {
-        mockMvc.perform(get("/api/admin/products"))
+        mockMvc.perform(put("/api/admin/products/-1/status").contentType("application/json").content("{\"status\":1}"))
                 .andExpect(status().isUnauthorized());
     }
 
@@ -32,7 +32,7 @@ class AdminAuthorizationIntegrationTest {
     void shouldReturn403WhenAdminRequestUsesNormalUserToken() throws Exception {
         String normalUserToken = jwtTokenService.generateToken(2L);
 
-        mockMvc.perform(get("/api/admin/products")
+        mockMvc.perform(put("/api/admin/products/-1/status").contentType("application/json").content("{\"status\":1}")
                         .header("Authorization", "Bearer " + normalUserToken))
                 .andExpect(status().isForbidden());
     }
@@ -41,9 +41,9 @@ class AdminAuthorizationIntegrationTest {
     void shouldPassInterceptorsForAdminToken() throws Exception {
         String adminToken = jwtTokenService.generateToken(1L);
 
-        // 管理员 Controller 已存在，但当前只实现 POST，所以 GET 会得到 405。
-        mockMvc.perform(get("/api/admin/products")
+        // 使用真实存在的 PUT 路由。通过鉴权后，因为商品 -1 不存在而返回 404，不修改业务数据。
+        mockMvc.perform(put("/api/admin/products/-1/status").contentType("application/json").content("{\"status\":1}")
                         .header("Authorization", "Bearer " + adminToken))
-                .andExpect(status().isMethodNotAllowed());
+                .andExpect(status().isNotFound());
     }
 }

@@ -10,6 +10,7 @@ import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
+import java.util.Optional;
 
 /**
  * 用户查询接口。
@@ -25,15 +26,21 @@ public class UserController {
     }
 
     /**
-     * 根据路径中的用户 ID 查询用户。
-     * 找到用户返回 200，找不到返回 404。
+     * 兼容早期按 ID 查询接口，但只允许查询本人，防止登录后枚举其他用户资料。
      */
     @GetMapping("/{id}")
-    public ResponseEntity<UserResponse> findById(@PathVariable Long id) {
-        return userService.findById(id)
-                .map(this::toResponse)
-                .map(ResponseEntity::ok)
-                .orElseGet(() -> ResponseEntity.notFound().build());
+    public ResponseEntity<UserResponse> findById(@PathVariable Long id, HttpServletRequest request) {
+        Long currentUserId = (Long) request.getAttribute(JwtAuthenticationInterceptor.CURRENT_USER_ID);
+        if (!id.equals(currentUserId)) {
+            // 他人和不存在的资料统一返回 404，不泄露其他用户是否存在。
+            return ResponseEntity.notFound().build();
+        }
+        Optional<AppUser> result = userService.findById(id);
+        if (result.isPresent()) {
+            return ResponseEntity.ok(toResponse(result.get()));
+        } else {
+            return ResponseEntity.notFound().build();
+        }
     }
 
     /**

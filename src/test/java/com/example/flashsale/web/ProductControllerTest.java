@@ -22,10 +22,11 @@ class ProductControllerTest {
 
     @Autowired
     private MockMvc mockMvc;
+    @Autowired private com.example.flashsale.auth.JwtTokenService jwt;
 
     @Test
     void shouldReturnProducts() throws Exception {
-        mockMvc.perform(get("/api/products"))
+        mockMvc.perform(get("/api/products").header("Authorization", "Bearer " + jwt.generateToken(1L)))
                 .andExpect(status().isOk())
                 // 数据库中可以有多件上架商品，所以只校验已知的第一个商品。
                 .andExpect(jsonPath("$[0].id").value(1))
@@ -40,7 +41,7 @@ class ProductControllerTest {
 
     @Test
     void shouldReturnProductById() throws Exception {
-        mockMvc.perform(get("/api/products/1"))
+        mockMvc.perform(get("/api/products/1").header("Authorization", "Bearer " + jwt.generateToken(1L)))
                 .andExpect(status().isOk())
                 .andExpect(content().json("""
                         {
@@ -55,7 +56,7 @@ class ProductControllerTest {
 
     @Test
     void shouldReturnNotFoundWhenProductDoesNotExist() throws Exception {
-        mockMvc.perform(get("/api/products/999999"))
+        mockMvc.perform(get("/api/products/999999").header("Authorization", "Bearer " + jwt.generateToken(1L)))
                 .andExpect(status().isNotFound());
     }
 }

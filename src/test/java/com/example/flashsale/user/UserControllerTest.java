@@ -19,10 +19,11 @@ class UserControllerTest {
 
     @Autowired
     private MockMvc mockMvc;
+    @Autowired private com.example.flashsale.auth.JwtTokenService jwt;
 
     @Test
     void shouldReturnDemoUser() throws Exception {
-        mockMvc.perform(get("/api/users/1"))
+        mockMvc.perform(get("/api/users/1").header("Authorization", "Bearer " + jwt.generateToken(1L)))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.username").value("demo_user"))
                 .andExpect(jsonPath("$.nickname").value("演示用户"));
@@ -30,7 +31,7 @@ class UserControllerTest {
 
     @Test
     void shouldReturnNotFoundWhenUserDoesNotExist() throws Exception {
-        mockMvc.perform(get("/api/users/999999"))
+        mockMvc.perform(get("/api/users/999999").header("Authorization", "Bearer " + jwt.generateToken(999999L)))
                 .andExpect(status().isNotFound());
     }
 }

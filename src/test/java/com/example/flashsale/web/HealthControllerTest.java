@@ -16,6 +16,9 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
  * 适合在项目早期快速验证 Controller 行为。
  */
 @WebMvcTest(HealthController.class)
+// Web 切片不会自动加载普通 Service，显式导入鉴权依赖，仍不连接数据库或 Redis。
+@org.springframework.context.annotation.Import({com.example.flashsale.auth.JwtAuthenticationInterceptor.class,
+        com.example.flashsale.auth.JwtTokenService.class, com.example.flashsale.auth.AdminAuthorizationInterceptor.class})
 class HealthControllerTest {
 
     @Autowired

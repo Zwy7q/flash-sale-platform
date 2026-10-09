@@ -31,6 +31,11 @@ public class JwtAuthenticationInterceptor implements HandlerInterceptor {
             HttpServletResponse response,
             Object handler) {
 
+        if (isPublicEndpoint(request)) {
+            // 登录和注册本来就发生在取得 Token 之前，不能要求它们先通过 JWT 校验。
+            return true;
+        }
+
         String authorization = request.getHeader("Authorization");
 
         // 标准格式是：Bearer 空格 JWT 字符串。
@@ -51,5 +56,22 @@ public class JwtAuthenticationInterceptor implements HandlerInterceptor {
             response.setStatus(HttpServletResponse.SC_UNAUTHORIZED);
             return false;
         }
+    }
+
+    /** 只公开明确的三个入口，不按 /api/users/** 或 /api/auth/** 整段放行。 */
+    private boolean isPublicEndpoint(HttpServletRequest request) {
+        String method = request.getMethod();
+        // 去掉应用 context-path，得到和 Controller 路由一致的应用内部路径。
+        String path = request.getRequestURI().substring(request.getContextPath().length());
+        if ("GET".equals(method) && "/api/health".equals(path)) {
+            return true;
+        }
+        if ("POST".equals(method) && "/api/auth/login".equals(path)) {
+            return true;
+        }
+        if ("POST".equals(method) && "/api/users".equals(path)) {
+            return true;
+        }
+        return false;
     }
 }
