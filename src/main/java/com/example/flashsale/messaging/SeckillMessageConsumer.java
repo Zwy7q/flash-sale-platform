@@ -23,14 +23,15 @@ public class SeckillMessageConsumer {
         this.orderService = orderService;
     }
 
-    @RabbitListener(queues = "${app.mq.order-queue:flash-sale.orders.create}")
+    @RabbitListener(queues = "${app.mq.order-queue:flash-sale.orders.create}",
+            containerFactory = "orderRabbitListenerContainerFactory")
     public void receive(String json) {
         final SeckillMessage message;
         try {
             // JSON 字符串 → Java 任务对象，不修改全局 RabbitTemplate 的转换器。
             message = objectMapper.readValue(json, SeckillMessage.class);
         } catch (JsonProcessingException exception) {
-            // 无法解析的消息不应无限重投。本阶段未配死信队列，拒绝后将丢弃。
+            // 格式错误向外抛出；统一重试配置耗尽后拒绝并送入死信队列。
             throw new AmqpRejectAndDontRequeueException("订单消息 JSON 格式错误", exception);
         }
         if (message == null) {
@@ -42,6 +43,7 @@ public class SeckillMessageConsumer {
         // createOrder 返回时事务已提交；重复任务返回已有订单，不重复扣减 MySQL 库存。
         log.info("订单任务处理完成：requestId={}，orderId={}", message.getRequestId(), orderId);
         // 默认 Spring AUTO：本方法正常返回后确认消息。
-        // 业务异常继续向外抛出；有界重试/死信和补偿将在下一小步完成。
+        // 异常继续向外抛出：监听工厂最多执行 3 次，耗尽后进入死信队列。
+        // Redis 补偿尚未实现，不能把进入死信队列理解为已经恢复抢购资格。
     }
 }

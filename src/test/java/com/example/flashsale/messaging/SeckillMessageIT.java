@@ -86,6 +86,7 @@ class SeckillMessageIT {
         // 先停止监听器，等待正在处理的消息结束，再删除本轮测试数据。
         listeners.stop();
         admin.deleteQueue(TEST_QUEUE);
+        admin.deleteQueue(TEST_QUEUE + ".dead");
         if (productId != null) {
             jdbc.update("DELETE FROM app_order WHERE product_id = ?", productId);
             jdbc.update("DELETE FROM app_product WHERE id = ?", productId);
