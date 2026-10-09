@@ -19,5 +19,11 @@ public enum SeckillResult {
     OUT_OF_STOCK,
 
     /** Redis 中未能获得商品库存。 */
-    STOCK_NOT_WARMED_UP
+    STOCK_NOT_WARMED_UP,
+    /** 本次发布被明确退回；当前基础版保留预扣供人工核对。 */
+    PUBLISH_FAILED,
+    /** 发送结果未知，不得立即恢复库存。 */
+    PUBLISH_UNKNOWN,
+    /** 查询尚未找到订单，可能排队、未发送或消费失败，不能断言具体原因。 */
+    RESULT_UNKNOWN
 }

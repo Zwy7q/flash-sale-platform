@@ -2,6 +2,16 @@ package com.example.flashsale.product;
 
 import com.example.flashsale.auth.JwtTokenService;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.AfterEach;
+import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.data.redis.core.StringRedisTemplate;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import java.time.LocalDateTime;
+import java.math.BigDecimal;
+import java.util.UUID;
+import java.util.ArrayList;
+import java.util.List;
+import static org.junit.jupiter.api.Assertions.*;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -28,6 +38,43 @@ class AdminProductControllerTest {
 
     @Autowired
     private JwtTokenService jwtTokenService;
+    @Autowired private JdbcTemplate jdbc;
+    @Autowired private StringRedisTemplate redis;
+    @Autowired private ObjectMapper mapper;
+    private final List<Long> fixtureIds = new ArrayList<>();
+
+    private Long fixture(LocalDateTime start) {
+        String name = "库存规则测试-" + UUID.randomUUID();
+        jdbc.update("""
+                INSERT INTO app_product (name, price, seckill_price, stock, seckill_stock,
+                    status, seckill_start_at, seckill_end_at) VALUES (?, 299, 129, 100, 20, 1, ?, ?)
+                """, name, start, start.plusHours(2));
+        Long id = jdbc.queryForObject("SELECT id FROM app_product WHERE name = ?", Long.class, name);
+        fixtureIds.add(id);
+        return id;
+    }
+
+    private String editBody(LocalDateTime start, int stock) throws Exception {
+        UpdateProductRequest request = new UpdateProductRequest();
+        request.setName("修改后的商品");
+        request.setPrice(new BigDecimal("399.00"));
+        request.setSeckillPrice(new BigDecimal("129.00"));
+        request.setStock(100);
+        request.setSeckillStock(stock);
+        request.setStatus(1);
+        request.setSeckillStartAt(start);
+        request.setSeckillEndAt(start.plusHours(2));
+        return mapper.writeValueAsString(request);
+    }
+
+    @AfterEach
+    void cleanupFixtureRedis() {
+        // MySQL 测试事务自动回滚；Redis 不参加该事务，所以只清理自己的商品 Key。
+        for (Long id : fixtureIds) {
+            redis.delete("flash-sale:stock:" + id);
+            redis.delete("flash-sale:product:" + id);
+        }
+    }
 
     @Test
     void shouldCreateProductWhenAdminTokenIsValid() throws Exception {
@@ -58,8 +105,11 @@ class AdminProductControllerTest {
     @Test
     void shouldUpdateAllProductFieldsWhenAdminTokenIsValid() throws Exception {
         String adminToken = jwtTokenService.generateToken(1L);
+        LocalDateTime start = LocalDateTime.now().plusDays(1).withNano(0);
+        Long id = fixture(start);
+        redis.opsForValue().set("flash-sale:stock:" + id, "20");
 
-        mockMvc.perform(put("/api/admin/products/13")
+        mockMvc.perform(put("/api/admin/products/{id}", id)
                         .header("Authorization", "Bearer " + adminToken)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
@@ -71,15 +121,40 @@ class AdminProductControllerTest {
                                   "stock": 300,
                                   "seckillStock": 120,
                                   "status": 1,
-                                  "seckillStartAt": "2026-09-06T10:00:00",
-                                  "seckillEndAt": "2026-09-06T12:00:00"
+                                  "seckillStartAt": "%s",
+                                  "seckillEndAt": "%s"
                                 }
-                                """))
+                                """.formatted(start, start.plusHours(2))))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.id").value(13))
+                .andExpect(jsonPath("$.id").value(id))
                 .andExpect(jsonPath("$.name").value("修改后的演示键盘"))
                 .andExpect(jsonPath("$.price").value(399.00))
                 .andExpect(jsonPath("$.seckillStock").value(120));
+        assertNull(redis.opsForValue().get("flash-sale:stock:" + id));
+        assertEquals(120, jdbc.queryForObject("SELECT seckill_stock FROM app_product WHERE id = ?", Integer.class, id));
+    }
+
+    @Test
+    void shouldReturnConflictForStockChangeAfterStart() throws Exception {
+        LocalDateTime start = LocalDateTime.now().minusHours(1).withNano(0);
+        Long id = fixture(start);
+        mockMvc.perform(put("/api/admin/products/{id}", id)
+                .header("Authorization", "Bearer " + jwtTokenService.generateToken(1L))
+                .contentType(MediaType.APPLICATION_JSON).content(editBody(start, 30)))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.code").value("STOCK_CHANGE_NOT_ALLOWED"));
+        assertEquals(20, jdbc.queryForObject("SELECT seckill_stock FROM app_product WHERE id = ?", Integer.class, id));
+    }
+
+    @Test
+    void shouldAllowNameChangeAfterStartIfStockAndTimeStaySame() throws Exception {
+        LocalDateTime start = LocalDateTime.now().minusHours(1).withNano(0);
+        Long id = fixture(start);
+        mockMvc.perform(put("/api/admin/products/{id}", id)
+                .header("Authorization", "Bearer " + jwtTokenService.generateToken(1L))
+                .contentType(MediaType.APPLICATION_JSON).content(editBody(start, 20)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.name").value("修改后的商品"));
     }
 
     @Test

@@ -1,69 +1,112 @@
 package com.example.flashsale.seckill;
 
 import com.example.flashsale.auth.JwtTokenService;
-import org.junit.jupiter.api.BeforeEach;
-import org.junit.jupiter.api.Test;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import org.junit.jupiter.api.*;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.amqp.rabbit.core.RabbitAdmin;
+import org.springframework.amqp.rabbit.listener.RabbitListenerEndpointRegistry;
 import org.springframework.data.redis.core.StringRedisTemplate;
+import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.test.context.DynamicPropertyRegistry;
+import org.springframework.test.context.DynamicPropertySource;
 import org.springframework.test.web.servlet.MockMvc;
+import java.time.Duration;
+import java.util.UUID;
+import static org.awaitility.Awaitility.await;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.*;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
 
-import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
-import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
-import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
-
-/** 秒杀接口集成测试：验证 HTTP、JWT、Service 和真实 Redis 的完整链路。 */
+/** JWT → Redis → RabbitMQ → MySQL → 结果查询，使用本轮独立商品与队列。 */
 @SpringBootTest
 @AutoConfigureMockMvc
 class SeckillControllerTest {
-
-    private static final Long PRODUCT_ID = 1L;
+    private static final String QUEUE = "flash-sale.test.http." + UUID.randomUUID();
     private static final Long USER_ID = 990001L;
-
-    @Autowired
-    private MockMvc mockMvc;
-
-    @Autowired
-    private JwtTokenService jwtTokenService;
-
-    @Autowired
-    private StringRedisTemplate stringRedisTemplate;
+    @DynamicPropertySource
+    static void queue(DynamicPropertyRegistry registry) {
+        registry.add("app.mq.order-queue", () -> QUEUE);
+    }
+    @Autowired private MockMvc mvc;
+    @Autowired private JwtTokenService jwt;
+    @Autowired private JdbcTemplate jdbc;
+    @Autowired private StringRedisTemplate redis;
+    @Autowired private ObjectMapper mapper;
+    @Autowired private RabbitAdmin admin;
+    @Autowired private RabbitListenerEndpointRegistry listeners;
+    private Long productId;
 
     @BeforeEach
-    void clearSeckillRedisData() {
-        // 每次测试都清理 Redis，避免上次测试的库存或购买标记影响本次测试。
-        stringRedisTemplate.delete("flash-sale:stock:" + PRODUCT_ID);
-        stringRedisTemplate.delete("flash-sale:purchase:" + PRODUCT_ID + ":" + USER_ID);
+    void setup() {
+        admin.initialize();
+        listeners.start();
+        String name = "HTTP秒杀测试-" + UUID.randomUUID();
+        jdbc.update("""
+                INSERT INTO app_product (name, price, seckill_price, stock, seckill_stock,
+                   status, seckill_start_at, seckill_end_at)
+                VALUES (?, 299, 129, 2, 2, 1, DATE_SUB(NOW(), INTERVAL 1 HOUR),
+                   DATE_ADD(NOW(), INTERVAL 1 HOUR))
+                """, name);
+        productId = jdbc.queryForObject("SELECT id FROM app_product WHERE name = ?", Long.class, name);
     }
 
-    @Test
-    void shouldAcceptSeckillRequestWhenJwtIsValid() throws Exception {
-        String token = jwtTokenService.generateToken(USER_ID);
+    @AfterEach
+    void cleanup() {
+        listeners.stop(); // 等待消费者完成，避免删商品后仍有消费事务。
+        admin.deleteQueue(QUEUE);
+        admin.deleteQueue(QUEUE + ".dead");
+        if (productId != null) {
+            jdbc.update("DELETE FROM app_order WHERE product_id = ?", productId);
+            jdbc.update("DELETE FROM app_product WHERE id = ?", productId);
+            redis.delete("flash-sale:stock:" + productId);
+            redis.delete("flash-sale:purchase:" + productId + ":" + USER_ID);
+            redis.delete("flash-sale:product:" + productId);
+        }
+    }
 
-        mockMvc.perform(post("/api/seckill/products/{productId}", PRODUCT_ID)
-                        .header("Authorization", "Bearer " + token))
+    private String submit() throws Exception {
+        String json = mvc.perform(post("/api/seckill/products/{id}", productId)
+                .header("Authorization", "Bearer " + jwt.generateToken(USER_ID)))
                 .andExpect(status().isAccepted())
-                .andExpect(jsonPath("$.result").value("SUCCESS"));
+                .andExpect(jsonPath("$.result").value("SUCCESS"))
+                .andExpect(jsonPath("$.requestId").isNotEmpty())
+                .andReturn().getResponse().getContentAsString();
+        return mapper.readTree(json).get("requestId").asText();
     }
 
     @Test
-    void shouldReturnUnauthorizedWhenSeckillRequestHasNoJwt() throws Exception {
-        mockMvc.perform(post("/api/seckill/products/{productId}", PRODUCT_ID))
-                .andExpect(status().isUnauthorized());
+    void shouldCreateOrderThroughFullSeckillChainAndProtectResult() throws Exception {
+        String requestId = submit();
+        await().atMost(Duration.ofSeconds(10)).untilAsserted(() ->
+            mvc.perform(get("/api/seckill/requests/{id}", requestId)
+                    .header("Authorization", "Bearer " + jwt.generateToken(USER_ID)))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.requestId").value(requestId))
+                    .andExpect(jsonPath("$.status").value("PENDING_PAYMENT")));
+        assertEquals(1, jdbc.queryForObject("SELECT seckill_stock FROM app_product WHERE id = ?",
+                Integer.class, productId));
+        assertEquals("1", redis.opsForValue().get("flash-sale:stock:" + productId));
+        mvc.perform(get("/api/seckill/requests/{id}", requestId)
+                .header("Authorization", "Bearer " + jwt.generateToken(USER_ID + 1)))
+                .andExpect(status().isAccepted())
+                .andExpect(jsonPath("$.result").value("RESULT_UNKNOWN"));
+        mvc.perform(get("/api/seckill/requests/{id}", requestId)).andExpect(status().isUnauthorized());
     }
 
     @Test
     void shouldRejectRepeatedSeckillRequestFromSameUser() throws Exception {
-        String token = jwtTokenService.generateToken(USER_ID);
-
-        mockMvc.perform(post("/api/seckill/products/{productId}", PRODUCT_ID)
-                        .header("Authorization", "Bearer " + token))
-                .andExpect(status().isAccepted());
-
-        mockMvc.perform(post("/api/seckill/products/{productId}", PRODUCT_ID)
-                        .header("Authorization", "Bearer " + token))
+        submit();
+        mvc.perform(post("/api/seckill/products/{id}", productId)
+                .header("Authorization", "Bearer " + jwt.generateToken(USER_ID)))
                 .andExpect(status().isConflict())
                 .andExpect(jsonPath("$.result").value("DUPLICATE_PURCHASE"));
+    }
+
+    @Test
+    void shouldRequireJwt() throws Exception {
+        mvc.perform(post("/api/seckill/products/{id}", productId)).andExpect(status().isUnauthorized());
     }
 }

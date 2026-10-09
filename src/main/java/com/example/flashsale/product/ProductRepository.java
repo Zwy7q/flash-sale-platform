@@ -16,6 +16,24 @@ import java.util.Optional;
  */
 @Repository
 public class ProductRepository {
+    /** 管理员修改前读取最新库存与活动时间，不走商品缓存，并锁住该商品行。 */
+    public Optional<Product> findByIdForUpdate(Long productId) {
+        List<Product> products = jdbcTemplate.query("""
+                SELECT seckill_stock, seckill_start_at, seckill_end_at
+                FROM app_product WHERE id = ? FOR UPDATE
+                """, (resultSet, rowNumber) -> {
+            Product product = new Product();
+            product.setId(productId);
+            product.setSeckillStock(resultSet.getInt("seckill_stock"));
+            product.setSeckillStartAt(resultSet.getTimestamp("seckill_start_at").toLocalDateTime());
+            product.setSeckillEndAt(resultSet.getTimestamp("seckill_end_at").toLocalDateTime());
+            return product;
+        }, productId);
+        if (products.isEmpty()) {
+            return Optional.empty();
+        }
+        return Optional.of(products.get(0));
+    }
 
     /**
      * 锁定商品行直到事务结束。同一商品的下单任务依次进入库存与订单处理。

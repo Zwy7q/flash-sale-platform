@@ -6,6 +6,10 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import org.springframework.data.redis.RedisConnectionFailureException;
 import org.springframework.stereotype.Service;
 import org.springframework.data.redis.core.StringRedisTemplate;
+import org.springframework.data.redis.core.Cursor;
+import org.springframework.data.redis.core.ScanOptions;
+import org.springframework.dao.DataAccessException;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Duration;
 import java.time.LocalDateTime;
@@ -229,7 +233,33 @@ public class ProductService {
     /**
      * 修改商品全部信息。商品不存在时返回 Optional.empty()。
      */
+    @Transactional
     public Optional<Product> updateProduct(Long productId, UpdateProductRequest request) {
+        // 必须使用 MySQL 最新记录；缓存可能带着消费者扣库存之前的旧值。
+        Optional<Product> currentResult = productRepository.findByIdForUpdate(productId);
+        if (currentResult.isEmpty()) {
+            return Optional.empty();
+        }
+        Product current = currentResult.get();
+        if (request.getSeckillStock() == null || request.getSeckillStock() < 0
+                || request.getSeckillStartAt() == null || request.getSeckillEndAt() == null
+                || !request.getSeckillEndAt().isAfter(request.getSeckillStartAt())) {
+            throw new ProductStockChangeException("秒杀库存必须非负，且结束时间必须晚于开始时间");
+        }
+        boolean stockChanged = !current.getSeckillStock().equals(request.getSeckillStock());
+        boolean timeChanged = !current.getSeckillStartAt().equals(request.getSeckillStartAt())
+                || !current.getSeckillEndAt().equals(request.getSeckillEndAt());
+        if (stockChanged || timeChanged) {
+            LocalDateTime now = LocalDateTime.now();
+            // 使用修改前的时间，防止先把已开始活动改到未来、再修改库存来绕过限制。
+            if (!now.isBefore(current.getSeckillStartAt())) {
+                throw new ProductStockChangeException("活动已经开始或结束，不能修改秒杀库存或重新排期");
+            }
+            if (!now.isBefore(request.getSeckillStartAt())) {
+                throw new ProductStockChangeException("调整库存或排期时，新开始时间必须在未来");
+            }
+            verifyNoReservationAndInvalidateStock(productId, current.getSeckillStock());
+        }
         Optional<Product> result = productRepository.update(productId, request);
 
         if (result.isPresent()) {
@@ -240,6 +270,30 @@ public class ProductService {
         }
 
         return result;
+    }
+
+    /** 活动开始前的基础防误操作检查；Redis 不可用时不能降级为“没有预扣”。 */
+    private void verifyNoReservationAndInvalidateStock(Long productId, Integer databaseStock) {
+        String stockKey = "flash-sale:stock:" + productId;
+        try {
+            String redisStock = stringRedisTemplate.opsForValue().get(stockKey);
+            if (redisStock != null && !databaseStock.equals(Integer.valueOf(redisStock))) {
+                throw new ProductStockChangeException("Redis 与 MySQL 库存不一致，需先核对预扣记录");
+            }
+            ScanOptions.ScanOptionsBuilder builder = ScanOptions.scanOptions();
+            builder.match("flash-sale:purchase:" + productId + ":*");
+            builder.count(100); // 每批扫描建议数量，避免使用阻塞 Redis 的全库 KEYS 命令。
+            try (Cursor<String> cursor = stringRedisTemplate.scan(builder.build())) {
+                if (cursor.hasNext()) {
+                    throw new ProductStockChangeException("该商品仍有购买标记，不能调整库存或重新排期");
+                }
+            }
+            // 安全准备阶段删除旧库存，下一次抢购从修改后的 MySQL 数据 SETNX 预热。
+            // 不直接 SET 一个新值，避免误覆盖；MySQL 后续失败时仅丢失可重建的预热数据。
+            stringRedisTemplate.delete(stockKey);
+        } catch (DataAccessException | NumberFormatException exception) {
+            throw new ProductStockChangeException("暂时无法确认 Redis 库存安全，请检查 Redis 后重试");
+        }
     }
 
     /**

@@ -9,6 +9,8 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
 import java.util.Optional;
+import java.util.Map;
+import org.springframework.web.bind.annotation.ExceptionHandler;
 
 /**
  * 管理员商品接口。
@@ -17,6 +19,12 @@ import java.util.Optional;
 @RestController
 @RequestMapping("/api/admin/products")
 public class AdminProductController {
+    /** 返回具体冲突原因，方便初学者在 Apifox 中理解为什么被拒绝。 */
+    @ExceptionHandler(ProductStockChangeException.class)
+    public ResponseEntity<Map<String, String>> handleStockConflict(ProductStockChangeException exception) {
+        return ResponseEntity.status(409).body(Map.of("code", "STOCK_CHANGE_NOT_ALLOWED",
+                "message", exception.getMessage()));
+    }
 
     private final ProductService productService;
 

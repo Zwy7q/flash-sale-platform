@@ -31,12 +31,10 @@ public class SeckillController {
         Long currentUserId = (Long) request.getAttribute(
                 JwtAuthenticationInterceptor.CURRENT_USER_ID);
 
-        SeckillResult result = seckillService.seckill(productId, currentUserId);
+        SeckillResponse response = seckillService.seckill(productId, currentUserId);
+        SeckillResult result = response.getResult();
 
         if (result == SeckillResult.SUCCESS) {
-            SeckillResponse response = new SeckillResponse(
-                    result,
-                    "已获得秒杀资格，订单正在等待后续创建");
             return ResponseEntity.accepted().body(response);
         }
 
@@ -45,21 +43,17 @@ public class SeckillController {
         }
 
         if (result == SeckillResult.SECKILL_NOT_ACTIVE) {
-            SeckillResponse response = new SeckillResponse(result, "当前不在秒杀活动时间内");
             return ResponseEntity.badRequest().body(response);
         }
 
         if (result == SeckillResult.DUPLICATE_PURCHASE) {
-            SeckillResponse response = new SeckillResponse(result, "不能重复抢购同一件商品");
             return ResponseEntity.status(409).body(response);
         }
 
         if (result == SeckillResult.OUT_OF_STOCK) {
-            SeckillResponse response = new SeckillResponse(result, "商品已售罄");
             return ResponseEntity.status(409).body(response);
         }
 
-        SeckillResponse response = new SeckillResponse(result, "秒杀库存尚未准备完成");
         return ResponseEntity.status(503).body(response);
     }
 }

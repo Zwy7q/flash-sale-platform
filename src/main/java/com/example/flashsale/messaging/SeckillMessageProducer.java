@@ -15,7 +15,6 @@ import java.util.concurrent.TimeoutException;
 
 /** 生产者：将 Java 任务对象转成 JSON 文本，再发送给订单队列。 */
 @Service
-@Profile("seckill-mq")
 public class SeckillMessageProducer {
     private final RabbitTemplate rabbitTemplate;
     private final ObjectMapper objectMapper;

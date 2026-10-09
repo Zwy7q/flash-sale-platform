@@ -12,6 +12,37 @@ import java.util.Optional;
 /** 订单数据访问层：只负责 SQL；库存校验、事务和消息幂等由后续业务层组织。 */
 @Repository
 public class OrderRepository {
+    /** 只查当前用户订单；同一秒创建的订单再按主键倒序，确保顺序稳定。 */
+    public List<SeckillOrder> findAllByUserId(Long userId) {
+        String sql = """
+                SELECT id, request_id, user_id, product_id, amount, status, created_at, updated_at
+                FROM app_order WHERE user_id = ?
+                ORDER BY created_at DESC, id DESC
+                """;
+        return jdbcTemplate.query(sql, (resultSet, rowNumber) -> {
+            // 一行数据库结果转换成一个订单对象；不是重新查询当前商品价格。
+            SeckillOrder order = new SeckillOrder();
+            order.setId(resultSet.getLong("id"));
+            order.setRequestId(resultSet.getString("request_id"));
+            order.setUserId(resultSet.getLong("user_id"));
+            order.setProductId(resultSet.getLong("product_id"));
+            order.setAmount(resultSet.getBigDecimal("amount"));
+            order.setStatus(OrderStatus.valueOf(resultSet.getString("status")));
+            order.setCreatedAt(resultSet.getTimestamp("created_at").toLocalDateTime());
+            order.setUpdatedAt(resultSet.getTimestamp("updated_at").toLocalDateTime());
+            return order;
+        }, userId); // 将 userId 绑定到 SQL 问号，用户隔离在数据库查询时完成。
+    }
+    /** 按任务编号查询当前用户的订单，供秒杀结果轮询使用。 */
+    public Optional<SeckillOrder> findByRequestIdAndUserId(String requestId, Long userId) {
+        List<Long> ids = jdbcTemplate.query(
+                "SELECT id FROM app_order WHERE request_id = ? AND user_id = ?",
+                (resultSet, rowNumber) -> resultSet.getLong("id"), requestId, userId);
+        if (ids.isEmpty()) {
+            return Optional.empty();
+        }
+        return findByIdAndUserId(ids.get(0), userId);
+    }
     /**
      * 消费任务时按请求编号查询已创建订单；FOR UPDATE 使用当前读。
      * 必须在事务内调用，避免 MySQL 可重复读下使用旧快照判断重复任务。

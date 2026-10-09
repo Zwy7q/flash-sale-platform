@@ -31,6 +31,9 @@ spring:
     # 默认虚拟主机，相当于 RabbitMQ 内的一套独立消息资源空间。
     virtual-host: /
     connection-timeout: 5s
+    # 真实秒杀链路默认启用生产者确认和无法路由消息退回。
+    publisher-confirm-type: correlated
+    publisher-returns: true
 
   jwt:
     # 教学环境密钥。生产环境必须通过环境变量或密钥管理服务注入。

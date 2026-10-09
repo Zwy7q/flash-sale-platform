@@ -6,10 +6,24 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
 import java.util.Optional;
+import java.util.List;
 
-/** 事务下单基础；后续由真实消息消费者调用，目前尚未开放 HTTP 下单接口。 */
+/** 订单业务层：消费者事务下单，以及当前登录用户的订单查询。 */
 @Service
 public class OrderService {
+    /** 当前阶段采用简单列表，后续订单量增大再增加分页。 */
+    public List<SeckillOrder> listMyOrders(Long currentUserId) {
+        return orderRepository.findAllByUserId(currentUserId);
+    }
+
+    /** 必须将用户条件继续传到 Repository，不能只按订单 ID 查。 */
+    public Optional<SeckillOrder> findMyOrder(Long orderId, Long currentUserId) {
+        return orderRepository.findByIdAndUserId(orderId, currentUserId);
+    }
+    /** 当前用户按请求编号查询订单，保持 Controller → Service → Repository 分层。 */
+    public Optional<SeckillOrder> findByRequestIdAndUserId(String requestId, Long userId) {
+        return orderRepository.findByRequestIdAndUserId(requestId, userId);
+    }
     private final ProductRepository productRepository;
     private final OrderRepository orderRepository;
 

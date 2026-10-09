@@ -286,6 +286,11 @@ class ProductServiceTest {
         updatedProduct.setName("修改后的商品");
         updatedProduct.setStock(300);
         when(productRepository.update(1L, request)).thenReturn(Optional.of(updatedProduct));
+        Product current = new Product();
+        current.setSeckillStock(120);
+        current.setSeckillStartAt(request.getSeckillStartAt());
+        current.setSeckillEndAt(request.getSeckillEndAt());
+        when(productRepository.findByIdForUpdate(1L)).thenReturn(Optional.of(current));
 
         Optional<Product> actualProduct = productService.updateProduct(1L, request);
 
@@ -310,6 +315,88 @@ class ProductServiceTest {
         verify(productRepository).updateStatus(1L, 0);
         verify(stringRedisTemplate).delete(ProductService.PRODUCT_LIST_CACHE_KEY);
         verify(stringRedisTemplate).delete(ProductService.productDetailCacheKey(1L));
+    }
+
+    @Test
+    void shouldRejectStockChangeAfterActivityStarted() {
+        Product current = editableProduct(LocalDateTime.now().minusHours(1));
+        UpdateProductRequest request = editRequest(current, 30);
+        when(productRepository.findByIdForUpdate(1L)).thenReturn(Optional.of(current));
+        org.junit.jupiter.api.Assertions.assertThrows(ProductStockChangeException.class,
+                () -> productService.updateProduct(1L, request));
+        verify(productRepository, org.mockito.Mockito.never()).update(1L, request);
+    }
+
+    @Test
+    void shouldInvalidateStockWhenFutureActivityHasNoReservation() {
+        Product current = editableProduct(LocalDateTime.now().plusDays(1));
+        UpdateProductRequest request = editRequest(current, 30);
+        when(productRepository.findByIdForUpdate(1L)).thenReturn(Optional.of(current));
+        when(stringRedisTemplate.opsForValue()).thenReturn(valueOperations);
+        when(valueOperations.get("flash-sale:stock:1")).thenReturn("20");
+        org.springframework.data.redis.core.Cursor<String> cursor = org.mockito.Mockito.mock(
+                org.springframework.data.redis.core.Cursor.class);
+        when(stringRedisTemplate.scan(org.mockito.ArgumentMatchers.any())).thenReturn(cursor);
+        when(cursor.hasNext()).thenReturn(false);
+        when(productRepository.update(1L, request)).thenReturn(Optional.of(current));
+        productService.updateProduct(1L, request);
+        verify(stringRedisTemplate).delete("flash-sale:stock:1");
+        verify(cursor).close();
+    }
+
+    @Test
+    void shouldRejectChangeIfRedisStockShowsReservation() {
+        Product current = editableProduct(LocalDateTime.now().plusDays(1));
+        UpdateProductRequest request = editRequest(current, 30);
+        when(productRepository.findByIdForUpdate(1L)).thenReturn(Optional.of(current));
+        when(stringRedisTemplate.opsForValue()).thenReturn(valueOperations);
+        when(valueOperations.get("flash-sale:stock:1")).thenReturn("19");
+        org.junit.jupiter.api.Assertions.assertThrows(ProductStockChangeException.class,
+                () -> productService.updateProduct(1L, request));
+        verify(productRepository, org.mockito.Mockito.never()).update(1L, request);
+    }
+
+    @Test
+    void shouldRejectWhenPurchaseMarkerRemainsEvenIfStockMatches() {
+        Product current = editableProduct(LocalDateTime.now().plusDays(1));
+        UpdateProductRequest request = editRequest(current, 30);
+        when(productRepository.findByIdForUpdate(1L)).thenReturn(Optional.of(current));
+        when(stringRedisTemplate.opsForValue()).thenReturn(valueOperations);
+        when(valueOperations.get("flash-sale:stock:1")).thenReturn("20");
+        org.springframework.data.redis.core.Cursor<String> cursor = org.mockito.Mockito.mock(
+                org.springframework.data.redis.core.Cursor.class);
+        when(stringRedisTemplate.scan(org.mockito.ArgumentMatchers.any())).thenReturn(cursor);
+        when(cursor.hasNext()).thenReturn(true);
+        org.junit.jupiter.api.Assertions.assertThrows(ProductStockChangeException.class,
+                () -> productService.updateProduct(1L, request));
+        verify(cursor).close();
+    }
+
+    @Test
+    void shouldNotBypassRuleByReschedulingStartedActivity() {
+        Product current = editableProduct(LocalDateTime.now().minusHours(1));
+        UpdateProductRequest request = editRequest(current, 20);
+        request.setSeckillStartAt(LocalDateTime.now().plusDays(1));
+        request.setSeckillEndAt(LocalDateTime.now().plusDays(1).plusHours(2));
+        when(productRepository.findByIdForUpdate(1L)).thenReturn(Optional.of(current));
+        org.junit.jupiter.api.Assertions.assertThrows(ProductStockChangeException.class,
+                () -> productService.updateProduct(1L, request));
+    }
+
+    private Product editableProduct(LocalDateTime start) {
+        Product product = new Product();
+        product.setSeckillStock(20);
+        product.setSeckillStartAt(start);
+        product.setSeckillEndAt(start.plusHours(2));
+        return product;
+    }
+
+    private UpdateProductRequest editRequest(Product current, int stock) {
+        UpdateProductRequest request = new UpdateProductRequest();
+        request.setSeckillStock(stock);
+        request.setSeckillStartAt(current.getSeckillStartAt());
+        request.setSeckillEndAt(current.getSeckillEndAt());
+        return request;
     }
 
     /** 构造只包含活动时间的商品，避免每个测试重复填写其他字段。 */

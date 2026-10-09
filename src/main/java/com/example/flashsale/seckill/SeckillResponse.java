@@ -13,4 +13,11 @@ public class SeckillResponse {
 
     /** 便于前端直接展示的中文提示。 */
     private String message;
+
+    /** 本次下单任务编号；未获得资格时为 null，发送未知时也返回以便查询。 */
+    private String requestId;
+
+    public SeckillResponse(SeckillResult result, String message) {
+        this(result, message, null);
+    }
 }

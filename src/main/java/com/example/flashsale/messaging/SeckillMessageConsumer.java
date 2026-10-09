@@ -12,7 +12,6 @@ import org.springframework.stereotype.Component;
 
 /** 订单消费者：转换任务，调用 Spring 管理的事务服务，成功后确认消费。 */
 @Component
-@Profile("seckill-mq")
 public class SeckillMessageConsumer {
     private static final Logger log = LoggerFactory.getLogger(SeckillMessageConsumer.class);
     private final ObjectMapper objectMapper;

@@ -18,7 +18,6 @@ import java.util.Map;
 /** 与文本教学队列分开，只有启用 seckill-mq 配置才监听真实订单任务。 */
 @Configuration
 @EnableRabbit
-@Profile("seckill-mq")
 public class SeckillRabbitConfig {
     @Bean
     public RabbitTemplateCustomizer mandatoryOrderMessages() {
