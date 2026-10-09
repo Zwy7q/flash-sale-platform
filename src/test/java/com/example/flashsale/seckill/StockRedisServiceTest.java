@@ -94,7 +94,7 @@ class StockRedisServiceTest {
                 org.mockito.ArgumentMatchers.<RedisScript<Long>>any(),
                 org.mockito.ArgumentMatchers.eq(java.util.List.of(
                         "flash-sale:stock:1",
-                        "flash-sale:purchase:1:20"))))
+                        "flash-sale:purchase:1:20")), org.mockito.ArgumentMatchers.eq("1")))
                 .thenReturn(1L);
 
         StockRedisService stockRedisService =
@@ -111,7 +111,7 @@ class StockRedisServiceTest {
                 org.mockito.ArgumentMatchers.<RedisScript<Long>>any(),
                 org.mockito.ArgumentMatchers.eq(java.util.List.of(
                         "flash-sale:stock:1",
-                        "flash-sale:purchase:1:20"))))
+                        "flash-sale:purchase:1:20")), org.mockito.ArgumentMatchers.eq("1")))
                 .thenReturn(-2L);
 
         StockRedisService stockRedisService =
@@ -128,7 +128,7 @@ class StockRedisServiceTest {
                 org.mockito.ArgumentMatchers.<RedisScript<Long>>any(),
                 org.mockito.ArgumentMatchers.eq(java.util.List.of(
                         "flash-sale:stock:1",
-                        "flash-sale:purchase:1:20"))))
+                        "flash-sale:purchase:1:20")), org.mockito.ArgumentMatchers.eq("1")))
                 .thenReturn(0L);
 
         StockRedisService stockRedisService =
@@ -145,7 +145,7 @@ class StockRedisServiceTest {
                 org.mockito.ArgumentMatchers.<RedisScript<Long>>any(),
                 org.mockito.ArgumentMatchers.eq(java.util.List.of(
                         "flash-sale:stock:1",
-                        "flash-sale:purchase:1:20"))))
+                        "flash-sale:purchase:1:20")), org.mockito.ArgumentMatchers.eq("1")))
                 .thenReturn(-1L);
 
         StockRedisService stockRedisService =

@@ -62,4 +62,18 @@ class OrderRepositoryIT {
                 repository.createPendingOrder(UUID.randomUUID().toString(),
                         990006L, 990006L, new BigDecimal("129.00")));
     }
+
+    @Test
+    void shouldKeepClosedHistoryAndAllowOnlyOneNewActiveOrder() {
+        Long first = repository.createPendingOrder(UUID.randomUUID().toString(),
+                990007L, 990007L, new BigDecimal("129.00"));
+        repository.markCancelled(first, 990007L);
+        Long second = repository.createPendingOrder(UUID.randomUUID().toString(),
+                990007L, 990007L, new BigDecimal("129.00"));
+        assertNotEquals(first, second);
+        assertEquals(2, repository.findAllByUserId(990007L).size());
+        assertEquals(OrderStatus.CANCELLED, repository.findByIdAndUserId(first, 990007L).get().getStatus());
+        assertThrows(DuplicateKeyException.class, () -> repository.createPendingOrder(
+                UUID.randomUUID().toString(), 990007L, 990007L, new BigDecimal("129.00")));
+    }
 }

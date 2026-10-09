@@ -8,6 +8,7 @@ import java.math.BigDecimal;
 import java.sql.Statement;
 import java.util.List;
 import java.util.Optional;
+import java.time.LocalDateTime;
 
 /** 订单数据访问层：只负责 SQL；库存校验、事务和消息幂等由后续业务层组织。 */
 @Repository
@@ -124,6 +125,58 @@ public class OrderRepository {
                 UPDATE app_order SET status = 'CANCELLED'
                 WHERE id = ? AND user_id = ? AND status = 'PENDING_PAYMENT'
                 """, orderId, userId);
+    }
+
+    /** Lua 归还成功后再写数据库完成标志，供定时任务查找尚未完成的释放。 */
+    public boolean isRedisStockReleased(Long orderId) {
+        Integer completed = jdbcTemplate.queryForObject(
+                "SELECT redis_stock_released FROM app_order WHERE id = ?", Integer.class, orderId);
+        return Integer.valueOf(1).equals(completed);
+    }
+
+    /** 成功标志只从 0 改成 1，不允许重复操作把它改回未完成。 */
+    public void markRedisStockReleased(Long orderId) {
+        jdbcTemplate.update("""
+                UPDATE app_order SET redis_stock_released = 1
+                WHERE id = ? AND status IN ('CANCELLED', 'PAYMENT_TIMEOUT')
+                """, orderId);
+    }
+
+    /** 扫描只拿候选 ID 和用户 ID；是否真的关闭仍由事务中最新状态决定。 */
+    public List<SeckillOrder> findExpiredPendingOrders(LocalDateTime cutoff, int limit) {
+        return jdbcTemplate.query("""
+                SELECT id, user_id FROM app_order
+                WHERE status = 'PENDING_PAYMENT' AND created_at <= ?
+                ORDER BY created_at, id LIMIT ?
+                """, (resultSet, rowNumber) -> {
+            SeckillOrder reference = new SeckillOrder();
+            reference.setId(resultSet.getLong("id"));
+            reference.setUserId(resultSet.getLong("user_id"));
+            return reference;
+        }, cutoff, limit);
+    }
+
+    /** 已关闭但 Redis 未确认完成的订单，不会因进程重启而丢失重试线索。 */
+    public List<SeckillOrder> findClosedOrdersAwaitingRelease(long afterId, int limit) {
+        return jdbcTemplate.query("""
+                SELECT id, user_id FROM app_order
+                WHERE status IN ('CANCELLED', 'PAYMENT_TIMEOUT')
+                  AND redis_stock_released = 0 AND id > ?
+                ORDER BY id LIMIT ?
+                """, (resultSet, rowNumber) -> {
+            SeckillOrder reference = new SeckillOrder();
+            reference.setId(resultSet.getLong("id"));
+            reference.setUserId(resultSet.getLong("user_id"));
+            return reference;
+        }, afterId, limit);
+    }
+
+    /** SQL 再限制原状态和到期时间，不覆盖已支付订单。 */
+    public int markTimedOut(Long orderId, Long userId, LocalDateTime cutoff) {
+        return jdbcTemplate.update("""
+                UPDATE app_order SET status = 'PAYMENT_TIMEOUT'
+                WHERE id = ? AND user_id = ? AND status = 'PENDING_PAYMENT' AND created_at <= ?
+                """, orderId, userId, cutoff);
     }
 
     /** 普通查询和加锁查询共用同一套行映射，避免复制所有字段转换代码。 */

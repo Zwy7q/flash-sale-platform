@@ -45,9 +45,19 @@ public class StockRedisService {
 
     static {
         STOCK_RELEASE_SCRIPT.setScriptText("""
-                -- KEYS[1] 是商品库存，KEYS[2] 是这笔订单的释放标记。
+                -- KEYS[1] 库存；KEYS[2] 订单释放标记；KEYS[3] 用户购买标记。
+                -- ARGV[1] 是被关闭订单原来的 requestId。只删除属于这次请求的标记。
+                local function clearOldPurchase()
+                    local purchase = redis.call('GET', KEYS[3])
+                    -- '1' 兼容升级前的旧标记；升级后的真实请求全部使用 requestId。
+                    if purchase == ARGV[1] or purchase == '1' then
+                        redis.call('DEL', KEYS[3])
+                    end
+                end
                 local releaseStatus = redis.call('GET', KEYS[2])
                 if releaseStatus == '1' then
+                    -- 兼容旧版已归还库存但保留了购买标记的已取消订单。
+                    clearOldPurchase()
                     return 0
                 end
                 -- 曾发现库存缺失或异常标记时，后续即使 Key 重建，也必须人工核对。
@@ -63,6 +73,7 @@ public class StockRedisService {
                 -- INCR 成功后才记录释放成功；损坏的库存会在这里报错，不会写成功标记。
                 redis.call('INCR', KEYS[1])
                 redis.call('SET', KEYS[2], '1')
+                clearOldPurchase()
                 return 1
                 """);
         STOCK_RELEASE_SCRIPT.setResultType(Long.class);
@@ -108,7 +119,8 @@ public class StockRedisService {
 
                 -- 库存扣减和购买标记写入在同一个原子脚本中完成。
                 redis.call('DECR', KEYS[1])
-                redis.call('SET', KEYS[2], '1')
+                -- 记录请求所有权，旧订单取消/超时不能误删新请求的标记。
+                redis.call('SET', KEYS[2], ARGV[1])
                 return 1
                 """);
         USER_STOCK_DEDUCTION_SCRIPT.setResultType(Long.class);
@@ -137,12 +149,12 @@ public class StockRedisService {
     }
 
     /**
-     * 仅在 MySQL 已确认订单取消后调用，同一订单最多归还一次 Redis 库存。
-     * 保留购买标记：本阶段数据库唯一约束仍然不允许取消后重新购买同一商品。
+     * 仅在 MySQL 已确认取消或超时后调用，归还库存并解除旧请求的购买资格。
      */
-    public void releaseCancelledOrderStock(Long productId, Long orderId) {
+    public void releaseClosedOrderStock(Long productId, Long orderId, Long userId, String requestId) {
         Long result = stringRedisTemplate.execute(STOCK_RELEASE_SCRIPT,
-                List.of(stockKey(productId), "flash-sale:stock-release:" + orderId));
+                List.of(stockKey(productId), "flash-sale:stock-release:" + orderId,
+                        purchaseKey(productId, userId)), requestId);
         if (Long.valueOf(1L).equals(result) || Long.valueOf(0L).equals(result)) {
             return;
         }
@@ -222,9 +234,18 @@ public class StockRedisService {
      * 这是 10B 阶段的能力；下一阶段由秒杀 Service 调用它。
      */
     public StockDeductionResult tryDeductStock(Long productId, Long userId) {
+        // 保留早期教学调用方式；真实秒杀入口调用三参数版本，传入唯一请求编号。
+        return tryDeductStock(productId, userId, "1");
+    }
+
+    /** requestId 同时用于购买标记和消息编号，将一次预扣与一笔订单关联起来。 */
+    public StockDeductionResult tryDeductStock(Long productId, Long userId, String requestId) {
+        if (requestId == null || requestId.isBlank()) {
+            throw new IllegalArgumentException("预扣库存的请求编号不能为空");
+        }
         Long scriptResult = stringRedisTemplate.execute(
                 USER_STOCK_DEDUCTION_SCRIPT,
-                List.of(stockKey(productId), purchaseKey(productId, userId)));
+                List.of(stockKey(productId), purchaseKey(productId, userId)), requestId);
 
         if (Long.valueOf(1L).equals(scriptResult)) {
             return StockDeductionResult.SUCCESS;

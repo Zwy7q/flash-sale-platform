@@ -59,6 +59,12 @@ class SeckillControllerTest {
         admin.deleteQueue(QUEUE);
         admin.deleteQueue(QUEUE + ".dead");
         if (productId != null) {
+            // 本测试新增取消/重购场景，一并清理仅属于测试订单的释放标记。
+            java.util.List<Long> ids = jdbc.query("SELECT id FROM app_order WHERE product_id = ?",
+                    (resultSet, rowNumber) -> resultSet.getLong("id"), productId);
+            for (Long id : ids) {
+                redis.delete("flash-sale:stock-release:" + id);
+            }
             jdbc.update("DELETE FROM app_order WHERE product_id = ?", productId);
             jdbc.update("DELETE FROM app_product WHERE id = ?", productId);
             redis.delete("flash-sale:stock:" + productId);
@@ -75,6 +81,32 @@ class SeckillControllerTest {
                 .andExpect(jsonPath("$.requestId").isNotEmpty())
                 .andReturn().getResponse().getContentAsString();
         return mapper.readTree(json).get("requestId").asText();
+    }
+
+    @Test
+    void shouldCreateNewOrderThroughMqAfterCancellation() throws Exception {
+        String firstRequest = submit();
+        await().atMost(Duration.ofSeconds(10)).untilAsserted(() ->
+                assertEquals(1, jdbc.queryForObject("SELECT COUNT(*) FROM app_order WHERE request_id = ?",
+                        Integer.class, firstRequest)));
+        Long firstId = jdbc.queryForObject("SELECT id FROM app_order WHERE request_id = ?", Long.class, firstRequest);
+        mvc.perform(post("/api/orders/{id}/cancel", firstId)
+                .header("Authorization", "Bearer " + jwt.generateToken(USER_ID)))
+                .andExpect(status().isOk());
+        String nextRequest = submit();
+        await().atMost(Duration.ofSeconds(10)).untilAsserted(() ->
+                assertEquals(1, jdbc.queryForObject("SELECT COUNT(*) FROM app_order WHERE request_id = ?",
+                        Integer.class, nextRequest)));
+        assertEquals(2, jdbc.queryForObject("SELECT COUNT(*) FROM app_order WHERE product_id = ?",
+                Integer.class, productId));
+        assertEquals("CANCELLED", jdbc.queryForObject("SELECT status FROM app_order WHERE id = ?", String.class, firstId));
+        assertEquals(nextRequest, redis.opsForValue().get("flash-sale:purchase:" + productId + ":" + USER_ID));
+        // 重试旧取消接口，库存和新购买标记必须保持不变。
+        mvc.perform(post("/api/orders/{id}/cancel", firstId)
+                .header("Authorization", "Bearer " + jwt.generateToken(USER_ID)))
+                .andExpect(status().isOk());
+        assertEquals("1", redis.opsForValue().get("flash-sale:stock:" + productId));
+        assertEquals(nextRequest, redis.opsForValue().get("flash-sale:purchase:" + productId + ":" + USER_ID));
     }
 
     @Test

@@ -3,10 +3,12 @@ package com.example.flashsale.order;
 import com.example.flashsale.product.ProductRepository;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.beans.factory.annotation.Value;
 
 import java.math.BigDecimal;
 import java.util.Optional;
 import java.util.List;
+import java.time.LocalDateTime;
 
 /** 订单业务层：消费者事务下单，以及当前登录用户的订单查询。 */
 @Service
@@ -17,6 +19,18 @@ public class OrderService {
      */
     @Transactional
     public Optional<SeckillOrder> cancelMyOrder(Long orderId, Long currentUserId) {
+        return closePendingOrder(orderId, currentUserId, OrderStatus.CANCELLED, null);
+    }
+
+    /** 定时任务使用的内部方法；必须再次锁行校验，不能直接相信扫描时看到的状态。 */
+    @Transactional
+    public Optional<SeckillOrder> expireOrder(Long orderId, Long userId, LocalDateTime cutoff) {
+        return closePendingOrder(orderId, userId, OrderStatus.PAYMENT_TIMEOUT, cutoff);
+    }
+
+    /** 两个入口共用锁顺序、状态更新和归还事务，避免取消和超时各写一套库存逻辑。 */
+    private Optional<SeckillOrder> closePendingOrder(Long orderId, Long currentUserId,
+                                                    OrderStatus target, LocalDateTime cutoff) {
         // 先确认归属并取得商品 ID，此时尚不锁订单，也不依据这次读取判断最终状态。
         Optional<SeckillOrder> initialResult = orderRepository.findByIdAndUserId(orderId, currentUserId);
         if (initialResult.isEmpty()) {
@@ -32,14 +46,26 @@ public class OrderService {
             return Optional.empty();
         }
         SeckillOrder order = latestResult.get();
-        if (order.getStatus() == OrderStatus.CANCELLED) {
+        if (order.getStatus() == target) {
             // 重复取消不再次归还 MySQL 库存；外层仍可重试未完成的 Redis 释放。
             return latestResult;
         }
         if (order.getStatus() != OrderStatus.PENDING_PAYMENT) {
+            if (target == OrderStatus.PAYMENT_TIMEOUT) {
+                // 扫描后用户可能已经支付或取消；任务跳过，不覆盖终态。
+                return Optional.empty();
+            }
             throw new OrderNotCancellableException("只有待支付订单才能取消");
         }
-        int affectedRows = orderRepository.markCancelled(orderId, currentUserId);
+        if (target == OrderStatus.PAYMENT_TIMEOUT && order.getCreatedAt().isAfter(cutoff)) {
+            return Optional.empty();
+        }
+        int affectedRows;
+        if (target == OrderStatus.CANCELLED) {
+            affectedRows = orderRepository.markCancelled(orderId, currentUserId);
+        } else {
+            affectedRows = orderRepository.markTimedOut(orderId, currentUserId, cutoff);
+        }
         if (affectedRows != 1) {
             throw new OrderNotCancellableException("订单状态已变化，不能取消");
         }
@@ -66,6 +92,11 @@ public class OrderService {
         if (order.getStatus() != OrderStatus.PENDING_PAYMENT) {
             throw new OrderNotPayableException("订单已关闭，不能支付");
         }
+        // 即使定时任务尚未扫描到这笔订单，超过支付期限也不能继续支付。
+        LocalDateTime deadline = order.getCreatedAt().plusSeconds(paymentTimeoutSeconds);
+        if (!LocalDateTime.now().isBefore(deadline)) {
+            throw new OrderNotPayableException("订单已超过支付期限，等待系统关闭");
+        }
         int affectedRows = orderRepository.markPaid(orderId, currentUserId);
         if (affectedRows != 1) {
             // 运行时异常触发事务回滚，不能向客户端报告支付成功。
@@ -90,10 +121,16 @@ public class OrderService {
     }
     private final ProductRepository productRepository;
     private final OrderRepository orderRepository;
+    private final long paymentTimeoutSeconds;
 
-    public OrderService(ProductRepository productRepository, OrderRepository orderRepository) {
+    public OrderService(ProductRepository productRepository, OrderRepository orderRepository,
+                        @Value("${app.order.payment-timeout-seconds:900}") long paymentTimeoutSeconds) {
+        if (paymentTimeoutSeconds <= 0) {
+            throw new IllegalArgumentException("支付超时秒数必须大于 0");
+        }
         this.productRepository = productRepository;
         this.orderRepository = orderRepository;
+        this.paymentTimeoutSeconds = paymentTimeoutSeconds;
     }
 
     /**

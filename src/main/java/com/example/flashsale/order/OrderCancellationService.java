@@ -15,10 +15,13 @@ public class OrderCancellationService {
     private static final Logger log = LoggerFactory.getLogger(OrderCancellationService.class);
     private final OrderService orderService;
     private final StockRedisService stockRedisService;
+    private final OrderRepository orderRepository;
 
-    public OrderCancellationService(OrderService orderService, StockRedisService stockRedisService) {
+    public OrderCancellationService(OrderService orderService, StockRedisService stockRedisService,
+                                    OrderRepository orderRepository) {
         this.orderService = orderService;
         this.stockRedisService = stockRedisService;
+        this.orderRepository = orderRepository;
     }
 
     /**
@@ -33,16 +36,32 @@ public class OrderCancellationService {
             return Optional.empty();
         }
         SeckillOrder order = result.get();
+        releaseClosedOrder(order);
+        return result;
+    }
+
+    /** 取消和超时共用；数据库已提交后才释放，成功后保存可用于重试扫描的完成标志。 */
+    @Transactional(propagation = Propagation.NEVER)
+    public void releaseClosedOrder(SeckillOrder order) {
+        if (order.getStatus() != OrderStatus.CANCELLED && order.getStatus() != OrderStatus.PAYMENT_TIMEOUT) {
+            throw new IllegalArgumentException("只能释放已取消或已超时订单的库存");
+        }
+        // 数据库已确认完成时直接返回，即使 Redis 释放标记丢失也不重复加库存。
+        if (orderRepository.isRedisStockReleased(order.getId())) {
+            return;
+        }
         try {
-            stockRedisService.releaseCancelledOrderStock(order.getProductId(), order.getId());
+            stockRedisService.releaseClosedOrderStock(order.getProductId(), order.getId(),
+                    order.getUserId(), order.getRequestId());
+            // 若此 SQL 失败，下一次扫描再次执行 Lua，释放标记能阻止重复加库存。
+            orderRepository.markRedisStockReleased(order.getId());
         } catch (RuntimeException exception) {
             // 此时不能回滚已提交的 MySQL，更不能把订单恢复为待支付。
             log.warn("订单已取消，Redis 库存释放待核对或重试：orderId={} productId={} cause={}",
-                    orderId, order.getProductId(), exception.toString());
+                    order.getId(), order.getProductId(), exception.toString());
             throw new OrderStockReleaseException(
-                    "订单已取消，Redis 库存释放尚未确认；可重试同一取消请求，库存数据缺失时需人工核对",
+                    "订单已关闭，Redis 库存释放尚未确认；后台会重试，库存数据缺失时需人工核对",
                     exception);
         }
-        return result;
     }
 }

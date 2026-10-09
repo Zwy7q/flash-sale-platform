@@ -33,6 +33,7 @@ class OrderCancellationIT {
     @Autowired private StockRedisService stock;
     @Autowired private StringRedisTemplate redis;
     @Autowired private JdbcTemplate jdbc;
+    @Autowired private OrderTimeoutService timeouts;
     private Long productId;
     private Long orderId;
     private final Long userId = 990701L;
@@ -50,7 +51,7 @@ class OrderCancellationIT {
         productId = jdbc.queryForObject("SELECT id FROM app_product WHERE name = ?", Long.class, name);
         requestId = UUID.randomUUID().toString();
         stock.setStock(productId, 2);
-        stock.tryDeductStock(productId, userId);
+        stock.tryDeductStock(productId, userId, requestId);
         orderId = orders.createOrder(requestId, userId, productId, new BigDecimal("129.00"));
         token = "Bearer " + jwt.generateToken(userId);
     }
@@ -96,8 +97,8 @@ class OrderCancellationIT {
         assertEquals(2, databaseStock());
         assertEquals(2, stock.getStock(productId));
         assertEquals("1", redis.opsForValue().get(releaseKey()));
-        // 保留购买标记，与同一用户同一商品只能创建一笔订单的约束一致。
-        assertEquals("1", redis.opsForValue().get(stock.purchaseKey(productId, userId)));
+        // 取消成功后解除旧请求的购买标记，允许同一用户再次抢购。
+        assertNull(redis.opsForValue().get(stock.purchaseKey(productId, userId)));
         mvc.perform(post("/api/orders/{id}/pay", orderId).header("Authorization", token))
                 .andExpect(status().isConflict());
     }
@@ -217,5 +218,133 @@ class OrderCancellationIT {
         assertEquals(orderId, orders.createOrder(requestId, userId, productId, new BigDecimal("129.00")));
         assertEquals(OrderStatus.CANCELLED, statusOfOrder());
         assertEquals(2, databaseStock());
+    }
+
+    @Test
+    void shouldNotDeleteNewPurchaseWhenOldCancellationIsRetried() throws Exception {
+        assertEquals(200, cancel().getResponse().getStatus());
+        String nextRequest = UUID.randomUUID().toString();
+        // 新请求真实执行 Lua 预扣：库存减 1，标记记录新的 requestId。
+        assertEquals(com.example.flashsale.seckill.StockDeductionResult.SUCCESS,
+                stock.tryDeductStock(productId, userId, nextRequest));
+        Long newOrder = orders.createOrder(nextRequest, userId, productId, new BigDecimal("129.00"));
+        try {
+            assertEquals(200, cancel().getResponse().getStatus());
+            assertEquals(nextRequest, redis.opsForValue().get(stock.purchaseKey(productId, userId)));
+            assertEquals(1, stock.getStock(productId));
+            assertEquals(1, databaseStock());
+            assertEquals(OrderStatus.PENDING_PAYMENT,
+                    repository.findByIdAndUserId(newOrder, userId).get().getStatus());
+            assertEquals(orderId, orders.createOrder(requestId, userId, productId, new BigDecimal("129.00")));
+            assertEquals(1, databaseStock());
+        } finally {
+            redis.delete("flash-sale:stock-release:" + newOrder);
+        }
+    }
+
+    @Test
+    void shouldRejectExpiredPaymentEvenBeforeScheduledScan() throws Exception {
+        jdbc.update("UPDATE app_order SET created_at = DATE_SUB(NOW(), INTERVAL 16 MINUTE) WHERE id = ?", orderId);
+        mvc.perform(post("/api/orders/{id}/pay", orderId).header("Authorization", token))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.code").value("ORDER_NOT_PAYABLE"));
+        // 支付拒绝不伪装为已支付；实际超时关闭和归还由定时扫描完成。
+        assertEquals(OrderStatus.PENDING_PAYMENT, statusOfOrder());
+        assertEquals(1, databaseStock());
+    }
+
+    private void makeOrderExpired() {
+        jdbc.update("UPDATE app_order SET created_at = DATE_SUB(NOW(), INTERVAL 16 MINUTE) WHERE id = ?", orderId);
+    }
+
+    private int releaseCompleted() {
+        return jdbc.queryForObject("SELECT redis_stock_released FROM app_order WHERE id = ?", Integer.class, orderId);
+    }
+
+    @Test
+    void shouldTimeoutThenAllowRepurchaseAndKeepOldHistory() {
+        makeOrderExpired();
+        timeouts.closeOneExpiredOrder(orderId, userId);
+        timeouts.closeOneExpiredOrder(orderId, userId);
+        assertEquals(OrderStatus.PAYMENT_TIMEOUT, statusOfOrder());
+        assertEquals(2, databaseStock());
+        assertEquals(2, stock.getStock(productId));
+        assertEquals(1, releaseCompleted());
+        assertNull(redis.opsForValue().get(stock.purchaseKey(productId, userId)));
+
+        String newRequest = UUID.randomUUID().toString();
+        assertEquals(com.example.flashsale.seckill.StockDeductionResult.SUCCESS,
+                stock.tryDeductStock(productId, userId, newRequest));
+        Long newId = orders.createOrder(newRequest, userId, productId, new BigDecimal("129.00"));
+        // 旧超时任务再执行，不能误删新请求的购买标记或多加库存。
+        timeouts.closeOneExpiredOrder(orderId, userId);
+        assertEquals(newRequest, redis.opsForValue().get(stock.purchaseKey(productId, userId)));
+        assertEquals(1, databaseStock());
+        assertEquals(1, stock.getStock(productId));
+        assertEquals(OrderStatus.PENDING_PAYMENT, repository.findByIdAndUserId(newId, userId).get().getStatus());
+        assertEquals(OrderStatus.PAYMENT_TIMEOUT, statusOfOrder());
+    }
+
+    @Test
+    void shouldSkipFreshOrAlreadyPaidOrder() {
+        timeouts.closeOneExpiredOrder(orderId, userId);
+        assertEquals(OrderStatus.PENDING_PAYMENT, statusOfOrder());
+        orders.payMyOrder(orderId, userId);
+        makeOrderExpired();
+        timeouts.closeOneExpiredOrder(orderId, userId);
+        assertEquals(OrderStatus.PAID, statusOfOrder());
+        assertEquals(1, databaseStock());
+        assertEquals(1, stock.getStock(productId));
+        assertEquals(0, releaseCompleted());
+    }
+
+    @Test
+    void shouldNotRestoreAgainWhenConfirmedReleaseMarkerIsLost() throws Exception {
+        assertEquals(200, cancel().getResponse().getStatus());
+        assertEquals(1, releaseCompleted());
+        redis.delete(releaseKey());
+        assertEquals(200, cancel().getResponse().getStatus());
+        assertEquals(2, stock.getStock(productId));
+        assertEquals(2, databaseStock());
+    }
+
+    @Test
+    void shouldRetryFailedTimeoutReleaseWithoutRepeatingDatabaseRestore() {
+        makeOrderExpired();
+        redis.opsForValue().set(stock.stockKey(productId), "broken-stock");
+        assertThrows(OrderStockReleaseException.class, () -> timeouts.closeOneExpiredOrder(orderId, userId));
+        assertEquals(OrderStatus.PAYMENT_TIMEOUT, statusOfOrder());
+        assertEquals(2, databaseStock());
+        assertEquals(0, releaseCompleted());
+        stock.setStock(productId, 1);
+        timeouts.closeOneExpiredOrder(orderId, userId);
+        assertEquals(2, stock.getStock(productId));
+        assertEquals(2, databaseStock());
+        assertEquals(1, releaseCompleted());
+    }
+
+    @Test
+    void shouldHandleConcurrentTimeoutWorkersOnlyOnce() throws Exception {
+        makeOrderExpired();
+        ExecutorService pool = Executors.newFixedThreadPool(2);
+        CountDownLatch start = new CountDownLatch(1);
+        Callable<Boolean> task = () -> {
+            start.await();
+            timeouts.closeOneExpiredOrder(orderId, userId);
+            return true;
+        };
+        try {
+            Future<Boolean> first = pool.submit(task);
+            Future<Boolean> second = pool.submit(task);
+            start.countDown();
+            assertTrue(first.get(15, TimeUnit.SECONDS));
+            assertTrue(second.get(15, TimeUnit.SECONDS));
+            assertEquals(OrderStatus.PAYMENT_TIMEOUT, statusOfOrder());
+            assertEquals(2, databaseStock());
+            assertEquals(2, stock.getStock(productId));
+        } finally {
+            pool.shutdownNow();
+            assertTrue(pool.awaitTermination(10, TimeUnit.SECONDS));
+        }
     }
 }

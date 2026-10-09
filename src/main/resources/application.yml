@@ -5,6 +5,12 @@ server:
 app:
   # 教学阶段使用固定管理员用户 ID，后续可升级为用户表 role 字段。
   admin-user-id: 1
+  order:
+    # 从订单 created_at 开始计时，默认 15 分钟内支付。
+    payment-timeout-seconds: 900
+    # 每轮最多处理 100 笔到期订单，并重试 100 笔未完成的 Redis 释放。
+    timeout-scan-interval-ms: 60000
+    timeout-enabled: true
 
 spring:
   application:

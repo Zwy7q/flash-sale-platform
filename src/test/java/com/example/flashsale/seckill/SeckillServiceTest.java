@@ -17,6 +17,7 @@ import java.util.Optional;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 import static org.mockito.Mockito.doThrow;
@@ -46,7 +47,7 @@ class SeckillServiceTest {
         product.setSeckillPrice(new java.math.BigDecimal("129.00"));
         when(productService.findOnSaleProduct(1L)).thenReturn(Optional.of(product));
         when(productService.isSeckillActive(eq(product), any(LocalDateTime.class))).thenReturn(true);
-        when(stockRedisService.tryDeductStock(1L, 20L))
+        when(stockRedisService.tryDeductStock(eq(1L), eq(20L), anyString()))
                 .thenReturn(StockDeductionResult.SUCCESS);
 
         SeckillResponse result = seckillService.seckill(1L, 20L);
@@ -59,7 +60,7 @@ class SeckillServiceTest {
         assertEquals(20L, message.getValue().getUserId());
         assertEquals(product.getSeckillPrice(), message.getValue().getAmount());
         verify(stockRedisService).ensureStockWarmUp(1L);
-        verify(stockRedisService).tryDeductStock(1L, 20L);
+        verify(stockRedisService).tryDeductStock(1L, 20L, result.getRequestId());
     }
 
     @Test
@@ -78,7 +79,7 @@ class SeckillServiceTest {
         product.setId(1L);
         when(productService.findOnSaleProduct(1L)).thenReturn(Optional.of(product));
         when(productService.isSeckillActive(eq(product), any(LocalDateTime.class))).thenReturn(true);
-        when(stockRedisService.tryDeductStock(1L, 20L))
+        when(stockRedisService.tryDeductStock(eq(1L), eq(20L), anyString()))
                 .thenReturn(StockDeductionResult.DUPLICATE_PURCHASE);
 
         SeckillResponse result = seckillService.seckill(1L, 20L);
@@ -94,7 +95,7 @@ class SeckillServiceTest {
         product.setSeckillPrice(new java.math.BigDecimal("129.00"));
         when(productService.findOnSaleProduct(1L)).thenReturn(Optional.of(product));
         when(productService.isSeckillActive(eq(product), any(LocalDateTime.class))).thenReturn(true);
-        when(stockRedisService.tryDeductStock(1L, 20L)).thenReturn(StockDeductionResult.SUCCESS);
+        when(stockRedisService.tryDeductStock(eq(1L), eq(20L), anyString())).thenReturn(StockDeductionResult.SUCCESS);
         doThrow(new MessagePublishException(MessagePublishException.Outcome.UNKNOWN, "timeout", null))
                 .when(producer).send(any(SeckillMessage.class));
         SeckillResponse response = seckillService.seckill(1L, 20L);

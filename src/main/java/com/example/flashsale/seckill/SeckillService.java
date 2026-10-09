@@ -57,10 +57,11 @@ public class SeckillService {
         // 首次抢购时预热库存；内部使用 SETNX，避免并发请求覆盖已扣减的库存。
         stockRedisService.ensureStockWarmUp(productId);
 
-        StockDeductionResult stockResult = stockRedisService.tryDeductStock(productId, userId);
+        // 在预扣前生成，保证 Redis 购买标记、RabbitMQ 消息、订单使用同一 requestId。
+        String requestId = UUID.randomUUID().toString();
+        StockDeductionResult stockResult = stockRedisService.tryDeductStock(productId, userId, requestId);
 
         if (stockResult == StockDeductionResult.SUCCESS) {
-            String requestId = UUID.randomUUID().toString();
             SeckillMessage message = new SeckillMessage(requestId, userId, productId, product.getSeckillPrice());
             try {
                 producer.send(message);

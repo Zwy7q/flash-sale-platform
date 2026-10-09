@@ -9,14 +9,19 @@ CREATE TABLE IF NOT EXISTS app_order (
     amount DECIMAL(10, 2) NOT NULL COMMENT '下单时成交金额快照',
     status VARCHAR(32) NOT NULL DEFAULT 'PENDING_PAYMENT'
         COMMENT 'PENDING_PAYMENT、PAID、CANCELLED、PAYMENT_TIMEOUT',
+    -- MySQL 自动计算：有效订单为 1，关闭订单为 NULL，不需要 Java 手工维护。
+    active_purchase TINYINT GENERATED ALWAYS AS
+        (CASE WHEN status IN ('PENDING_PAYMENT', 'PAID') THEN 1 ELSE NULL END) STORED,
+    redis_stock_released TINYINT NOT NULL DEFAULT 0 COMMENT 'Redis 库存与购买资格已释放：0否，1是',
     created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
     updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
         ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
     CONSTRAINT uk_app_order_request UNIQUE (request_id),
-    -- 当前一商品对应一次活动，同一用户最多创建一个订单。
-    -- 后续允许多轮活动或取消后重购时，需一起调整此约束和 Redis 购买标记。
-    CONSTRAINT uk_app_order_user_product UNIQUE (user_id, product_id),
+    -- UNIQUE 允许多个 NULL，因此可以保留多笔取消/超时历史，但只能有一笔有效订单。
+    CONSTRAINT uk_app_order_active_purchase UNIQUE (user_id, product_id, active_purchase),
     INDEX idx_app_order_user_created (user_id, created_at),
+    INDEX idx_app_order_timeout (status, created_at, id),
+    INDEX idx_app_order_release (status, redis_stock_released, id),
     CONSTRAINT ck_app_order_amount CHECK (amount >= 0),
     CONSTRAINT ck_app_order_status CHECK
         (status IN ('PENDING_PAYMENT', 'PAID', 'CANCELLED', 'PAYMENT_TIMEOUT'))
