@@ -25,10 +25,12 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 @AutoConfigureMockMvc
 class SeckillControllerTest {
     private static final String QUEUE = "flash-sale.test.http." + UUID.randomUUID();
+    private static final String METRICS = "test:http-metrics:" + UUID.randomUUID() + ":";
     private static final Long USER_ID = 990001L;
     @DynamicPropertySource
     static void queue(DynamicPropertyRegistry registry) {
         registry.add("app.mq.order-queue", () -> QUEUE);
+        registry.add("app.analytics.metrics-key-prefix", () -> METRICS);
     }
     @Autowired private MockMvc mvc;
     @Autowired private JwtTokenService jwt;
@@ -70,7 +72,9 @@ class SeckillControllerTest {
             redis.delete("flash-sale:stock:" + productId);
             redis.delete("flash-sale:purchase:" + productId + ":" + USER_ID);
             redis.delete("flash-sale:product:" + productId);
+            redis.delete(METRICS + "product:" + productId);
         }
+        redis.delete(METRICS + "all");
     }
 
     private String submit() throws Exception {
@@ -135,10 +139,14 @@ class SeckillControllerTest {
                 .header("Authorization", "Bearer " + jwt.generateToken(USER_ID)))
                 .andExpect(status().isConflict())
                 .andExpect(jsonPath("$.result").value("DUPLICATE_PURCHASE"));
+        assertEquals("2", redis.opsForHash().get(METRICS + "all", "requests"));
+        assertEquals("1", redis.opsForHash().get(METRICS + "all", "accepted"));
+        assertEquals("2", redis.opsForHash().get(METRICS + "product:" + productId, "requests"));
     }
 
     @Test
     void shouldRequireJwt() throws Exception {
         mvc.perform(post("/api/seckill/products/{id}", productId)).andExpect(status().isUnauthorized());
+        assertEquals(false, redis.hasKey(METRICS + "all"));
     }
 }

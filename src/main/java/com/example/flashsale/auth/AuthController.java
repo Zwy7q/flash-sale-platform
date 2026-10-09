@@ -3,6 +3,7 @@ package com.example.flashsale.auth;
 import com.example.flashsale.user.AppUser;
 import com.example.flashsale.user.UserResponse;
 import com.example.flashsale.user.UserService;
+import com.example.flashsale.user.UserResponseFactory;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
@@ -18,10 +19,13 @@ public class AuthController {
 
     private final UserService userService;
     private final JwtTokenService jwtTokenService;
+    private final UserResponseFactory responseFactory;
 
-    public AuthController(UserService userService, JwtTokenService jwtTokenService) {
+    public AuthController(UserService userService, JwtTokenService jwtTokenService,
+                          UserResponseFactory responseFactory) {
         this.userService = userService;
         this.jwtTokenService = jwtTokenService;
+        this.responseFactory = responseFactory;
     }
 
     /**
@@ -30,8 +34,7 @@ public class AuthController {
     @PostMapping("/login")
     public ResponseEntity<LoginResponse> login(@RequestBody LoginRequest request) {
         AppUser user = userService.login(request.getUsername(), request.getPassword());
-        UserResponse response = new UserResponse(
-                user.getId(), user.getUsername(), user.getNickname(), user.getStatus());
+        UserResponse response = responseFactory.from(user);
         String token = jwtTokenService.generateToken(user.getId());
         return ResponseEntity.ok(new LoginResponse(token, response));
     }

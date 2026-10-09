@@ -4,6 +4,12 @@
 
 # Maven 编译输出
 target/
+
+# Vue：提交源码和 lockfile，不提交依赖、产物及本机环境覆盖文件。
+frontend/node_modules/
+frontend/dist/
+frontend/.env.local
+frontend/.env.*.local
 #计划文档
 docs/
 # 本机 Maven 配置，路径因电脑而异

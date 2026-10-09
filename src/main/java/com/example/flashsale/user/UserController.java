@@ -20,9 +20,11 @@ import java.util.Optional;
 public class UserController {
 
     private final UserService userService;
+    private final UserResponseFactory responseFactory;
 
-    public UserController(UserService userService) {
+    public UserController(UserService userService, UserResponseFactory responseFactory) {
         this.userService = userService;
+        this.responseFactory = responseFactory;
     }
 
     /**
@@ -72,6 +74,6 @@ public class UserController {
     }
 
     private UserResponse toResponse(AppUser user) {
-        return new UserResponse(user.getId(), user.getUsername(), user.getNickname(), user.getStatus());
+        return responseFactory.from(user);
     }
 }

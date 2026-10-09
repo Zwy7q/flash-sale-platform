@@ -1,6 +1,7 @@
 package com.example.flashsale.seckill;
 
 import com.example.flashsale.auth.JwtAuthenticationInterceptor;
+import com.example.flashsale.analytics.SeckillMetricsService;
 import jakarta.servlet.http.HttpServletRequest;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -18,9 +19,11 @@ import org.springframework.web.bind.annotation.RestController;
 public class SeckillController {
 
     private final SeckillService seckillService;
+    private final SeckillMetricsService metricsService;
 
-    public SeckillController(SeckillService seckillService) {
+    public SeckillController(SeckillService seckillService, SeckillMetricsService metricsService) {
         this.seckillService = seckillService;
+        this.metricsService = metricsService;
     }
 
     /** 提交一次秒杀请求。 */
@@ -31,7 +34,16 @@ public class SeckillController {
         Long currentUserId = (Long) request.getAttribute(
                 JwtAuthenticationInterceptor.CURRENT_USER_ID);
 
-        SeckillResponse response = seckillService.seckill(productId, currentUserId);
+        SeckillResponse response;
+        boolean accepted = false;
+        try {
+            response = seckillService.seckill(productId, currentUserId);
+            accepted = response.getResult() == SeckillResult.SUCCESS;
+        } finally {
+            // 进入 Controller 的请求才计数；异常请求也计入分母，JWT 拒绝不计入。
+            // record 内部捕获 Redis 异常，辅助统计不影响原来的秒杀结果。
+            metricsService.record(productId, accepted);
+        }
         SeckillResult result = response.getResult();
 
         if (result == SeckillResult.SUCCESS) {

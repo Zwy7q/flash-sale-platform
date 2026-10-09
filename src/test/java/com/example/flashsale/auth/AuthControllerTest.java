@@ -46,6 +46,7 @@ class AuthControllerTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.token").isNotEmpty())
                 .andExpect(jsonPath("$.user.username").value("demo_user"))
+                .andExpect(jsonPath("$.user.isAdmin").value(true))
                 .andExpect(jsonPath("$.user.passwordHash").doesNotExist());
     }
 }

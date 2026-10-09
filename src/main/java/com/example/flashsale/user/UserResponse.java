@@ -15,4 +15,6 @@ public class UserResponse {
     private String username;
     private String nickname;
     private Integer status;
+    /** 服务端计算的展示标识，不接受前端指定，不代替管理员拦截器。 */
+    private Boolean isAdmin;
 }
