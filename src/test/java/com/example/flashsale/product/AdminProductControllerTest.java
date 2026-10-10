@@ -8,6 +8,7 @@ import org.springframework.data.redis.core.StringRedisTemplate;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import java.time.LocalDateTime;
 import java.math.BigDecimal;
+import java.nio.charset.StandardCharsets;
 import java.util.UUID;
 import java.util.ArrayList;
 import java.util.List;
@@ -20,6 +21,7 @@ import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.transaction.annotation.Transactional;
 
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -42,6 +44,49 @@ class AdminProductControllerTest {
     @Autowired private StringRedisTemplate redis;
     @Autowired private ObjectMapper mapper;
     private final List<Long> fixtureIds = new ArrayList<>();
+
+    @Test
+    void adminShouldReadCompleteProductsIncludingOffSaleFromDatabase() throws Exception {
+        Long id = fixture(LocalDateTime.now().plusDays(1).withNano(0));
+        jdbc.update("UPDATE app_product SET status = 0, description = '管理详情', seckill_stock = 17 WHERE id = ?", id);
+        // 用户商品缓存故意放入旧值；管理员查询必须读 MySQL，不受该缓存影响。
+        redis.opsForValue().set("flash-sale:product:" + id, "旧缓存");
+        String token = jwtTokenService.generateToken(1L);
+        String json = mockMvc.perform(get("/api/admin/products").header("Authorization", "Bearer " + token))
+                .andExpect(status().isOk()).andReturn().getResponse().getContentAsString(StandardCharsets.UTF_8);
+        Product[] products = mapper.readValue(json, Product[].class);
+        Product found = null;
+        for (Product product : products) {
+            if (product.getId().equals(id)) { found = product; }
+        }
+        assertNotNull(found);
+        assertEquals(0, found.getStatus());
+        assertEquals(17, found.getSeckillStock());
+        assertEquals("管理详情", found.getDescription());
+        assertNotNull(found.getPrice());
+
+        mockMvc.perform(get("/api/admin/products/{id}", id).header("Authorization", "Bearer " + token))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.status").value(0))
+                .andExpect(jsonPath("$.seckillStock").value(17))
+                .andExpect(jsonPath("$.description").value("管理详情"));
+    }
+
+    @Test
+    void missingAdminProductShouldReturn404() throws Exception {
+        mockMvc.perform(get("/api/admin/products/-1")
+                .header("Authorization", "Bearer " + jwtTokenService.generateToken(1L)))
+                .andExpect(status().isNotFound());
+    }
+
+    @Test
+    void adminReadRoutesShouldRequireJwtAndAdminIdentity() throws Exception {
+        for (String path : List.of("/api/admin/products", "/api/admin/products/1")) {
+            mockMvc.perform(get(path)).andExpect(status().isUnauthorized());
+            mockMvc.perform(get(path).header("Authorization", "Bearer " + jwtTokenService.generateToken(2L)))
+                    .andExpect(status().isForbidden());
+        }
+    }
 
     private Long fixture(LocalDateTime start) {
         String name = "库存规则测试-" + UUID.randomUUID();

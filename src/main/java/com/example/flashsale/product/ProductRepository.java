@@ -192,7 +192,7 @@ public class ProductRepository {
     }
 
     /** 根据商品 ID 查询商品，不限制上下架状态。 */
-    private Optional<Product> findAnyById(Long productId) {
+    public Optional<Product> findAnyById(Long productId) {
         String sql = """
                 SELECT id, name, description, price, seckill_price,
                        stock, seckill_stock, status,
@@ -220,7 +220,34 @@ public class ProductRepository {
                 }
         );
 
-        return products.stream().findFirst();
+        if (products.isEmpty()) {
+            return Optional.empty();
+        }
+        return Optional.of(products.get(0));
+    }
+
+    /** 管理员列表包含下架商品，返回表单需要的完整字段。 */
+    public List<Product> findAllForAdmin() {
+        String sql = """
+                SELECT id, name, description, price, seckill_price,
+                       stock, seckill_stock, status, seckill_start_at, seckill_end_at
+                FROM app_product ORDER BY id
+                """;
+        return jdbcTemplate.query(sql, (resultSet, rowNumber) -> {
+            // 每一行转换成一个 Product，字段名称对应 MySQL 列名。
+            Product product = new Product();
+            product.setId(resultSet.getLong("id"));
+            product.setName(resultSet.getString("name"));
+            product.setDescription(resultSet.getString("description"));
+            product.setPrice(resultSet.getBigDecimal("price"));
+            product.setSeckillPrice(resultSet.getBigDecimal("seckill_price"));
+            product.setStock(resultSet.getInt("stock"));
+            product.setSeckillStock(resultSet.getInt("seckill_stock"));
+            product.setStatus(resultSet.getInt("status"));
+            product.setSeckillStartAt(resultSet.getTimestamp("seckill_start_at").toLocalDateTime());
+            product.setSeckillEndAt(resultSet.getTimestamp("seckill_end_at").toLocalDateTime());
+            return product;
+        });
     }
 
     /**

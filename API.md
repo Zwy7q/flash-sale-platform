@@ -25,7 +25,7 @@ POST /api/auth/login
 POST /api/users
 ```
 
-## 2. 已实现接口总表（19 个）
+## 2. 已实现接口总表（21 个）
 
 | 方法 | 路径 | 权限 | 成功响应 |
 |---|---|---|---|
@@ -36,6 +36,8 @@ POST /api/users
 | GET | `/api/users/{id}` | 登录且本人 | 200，UserResponse |
 | GET | `/api/products` | 登录 | 200，ProductSummary[] |
 | GET | `/api/products/{id}` | 登录 | 200，Product |
+| GET | `/api/admin/products` | 管理员 | 200，Product[]，含下架商品 |
+| GET | `/api/admin/products/{id}` | 管理员 | 200，Product，含下架商品 |
 | POST | `/api/admin/products` | 管理员 | 200，Product |
 | PUT | `/api/admin/products/{id}` | 管理员 | 200，Product |
 | PUT | `/api/admin/products/{id}/status` | 管理员 | 200，Product |
@@ -179,7 +181,19 @@ price、seckillPrice 为 number；stock、seckillStock、status 为 integer。
 普通库存和秒杀库存是独立库存。商品详情经过缓存，seckillStock 不能作为 Redis 实时可抢库存承诺。
 当前也没有普通用户查询 Redis 实时库存的专用接口。
 
-## 5. 管理员商品写接口
+## 5. 管理员商品管理接口
+
+### GET /api/admin/products
+
+无参数、无请求体，返回全部商品的完整 Product 数组，包含上架和下架商品；空列表为 `[]`。
+直接查询 MySQL，不读取用户商品缓存；尚无分页和搜索参数。
+
+### GET /api/admin/products/{id}
+
+无请求体，返回完整 Product；下架商品也可查询，不存在返回 404、空响应体。
+编辑之前用此接口读取当前数据库值，避免拿用户商品摘要或旧缓存填充完整更新表单。
+这不等于并发版本校验，当前未实现乐观锁，读后仍可能有其他写入。
+两个读取接口都经过 JWT 和管理员身份拦截：未认证 401，普通用户 403。
 
 ### POST /api/admin/products
 
@@ -237,9 +251,7 @@ status=1 上架、0 下架。创建接口尚无完整 Bean Validation，前端�
 status 只应提交 0 或 1。成功 200 + Product；不存在返回 404。
 非法状态当前抛 IllegalArgumentException，尚未统一映射为 400，前端不能假设其错误结构。
 
-**现阶段缺口：** 没有 `GET /api/admin/products` 或 `GET /api/admin/products/{id}`。
-用户商品接口只查上架商品，不能用于完整管理下架商品；统计列表虽能列出下架商品，
-但不含价格、描述、排期等全部编辑字段。前端管理页之前需要补管理员只读接口，详见 FRONTEND_PLAN.md。
+15E 已补完整管理员读取接口。用户商品接口仍只查询上架商品，统计接口仍只提供统计字段。
 
 ## 6. 秒杀与异步结果查询
 
@@ -488,6 +500,6 @@ Axios 默认把 202 当成功，把 4xx/5xx 当异常：请求结果查询必须
 
 ## 10. 当前没有的能力
 
-管理员商品读列表/读详情、统一参数校验/错误包装、Token 刷新、服务端退出登录、
+统一参数校验/错误包装、Token 刷新、服务端退出登录、
 分页搜索、用户商品实时库存、订单商品名称快照、管理员全量订单查询、第三方支付、图片上传，均不应当作已有接口使用。
-15B 已补管理员身份标识；15E 计划补管理员商品读取，以支持既定页面；其他能力不顺带扩张。
+15B 已补管理员身份标识；15E 已补管理员商品读取和管理页面；其他能力不顺带扩张。

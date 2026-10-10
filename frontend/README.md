@@ -1,7 +1,7 @@
-# 秒杀平台 Vue 前端 · 15D
+# 秒杀平台 Vue 前端 · 15E
 
-独立 Vue 工程，Spring Boot 在父目录。当前已完成账户、商品、秒杀和我的订单页面。
-后续按父目录 FRONTEND_PLAN.md 完成管理员页面。教学见 LEARNING_15B.md、LEARNING_15C.md 和 LEARNING_15D.md。
+独立 Vue 工程，Spring Boot 在父目录。当前已完成账户、商品、秒杀、我的订单和管理员商品管理页面。
+后续按父目录 FRONTEND_PLAN.md 完成统计看板。教学见 LEARNING_15B.md～LEARNING_15E.md。
 
 ## 启动
 
@@ -16,7 +16,7 @@ npm run dev
 首次获取工程或 lockfile 改变时执行 npm ci。依赖已安装且未变化时直接 npm run dev。
 打开 http://localhost:5173/products，未登录先跳登录，成功后进入商品列表。
 账户首页 /welcome 保留用户资料和“检查连接”。订单路径为 /orders，详情路径为 /products/商品ID。
-本阶段修改了 Java 响应，已运行的 IDEA 后端需要重启。
+15E 新增两个管理员 GET 接口，已运行的 IDEA 后端需要重启。
 不要同时启动两份 Vite；5173 占用时先确认是否已有本工程运行。
 官方 npm 源超时时可仅为当前安装指定镜像，不改全局配置：
 
@@ -76,7 +76,7 @@ Router、Pinia、Element Plus 已注册。具体模块与流程见 LEARNING_15B.
 7. 已登录时停止后端并刷新，显示恢复失败页；重启后端并点击重试，恢复会话。
 8. 账户首页“检查连接”调用公开 /api/health，200 + OK，只代表 Web 入口可访问。
 
-/admin 当前只是身份验证演示，商品管理在 15E 实现。Token 存当前标签页 sessionStorage，密码不保存。
+/admin 是身份验证演示，管理员商品管理入口为 /admin/products。Token 存当前标签页 sessionStorage，密码不保存。
 退出只清本地会话，不撤销服务器已签发的 JWT。
 
 ## 构建
@@ -90,5 +90,5 @@ npm run build
 当前 /api 代理只配置在开发服务器，生产需另外配置反向代理。
 修改 .env.development 或 vite.config.js 后重启 npm run dev。
 
-27 项前端测试集中于 src/auth.test.js、src/seckill.test.js 和 src/orders.test.js。当前全量引入 Element Plus，构建可能提示 chunk 较大。
-订单的手工验收和状态流转见 LEARNING_15D.md。理解并验收后进入 15E：管理员商品管理。Git 提交/推送由用户自行执行。
+33 项前端测试集中于 src/auth.test.js、src/seckill.test.js、src/orders.test.js 和 src/admin.test.js。当前全量引入 Element Plus，构建可能提示 chunk 较大。
+商品管理的表单原理和手工验收见 LEARNING_15E.md。理解并验收后进入 15F：统计看板与整体验收。Git 提交/推送由用户自行执行。

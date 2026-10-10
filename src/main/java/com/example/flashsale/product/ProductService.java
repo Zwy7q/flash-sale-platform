@@ -61,9 +61,18 @@ public class ProductService {
         this.objectMapper = objectMapper;
     }
 
-    /**
-     * 查询所有上架商品。
-     */
+    /** 管理员列表直接读取 MySQL 全部商品。 */
+    public List<Product> listAdminProducts() {
+        // 管理表单需要完整且最新的数据，不能使用用户侧商品缓存。
+        return productRepository.findAllForAdmin();
+    }
+
+    /** 管理员详情不限制上下架状态；鉴权由管理员路径的拦截器完成。 */
+    public Optional<Product> findAdminProduct(Long productId) {
+        return productRepository.findAnyById(productId);
+    }
+
+    /** 查询上架商品摘要，走 Redis 缓存。 */
     public List<ProductSummary> listOnSaleProducts() {
         String cachedJson = readCacheValue(PRODUCT_LIST_CACHE_KEY);
 

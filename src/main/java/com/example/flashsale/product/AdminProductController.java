@@ -2,6 +2,7 @@ package com.example.flashsale.product;
 
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestBody;
@@ -9,6 +10,7 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
 import java.util.Optional;
+import java.util.List;
 import java.util.Map;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 
@@ -30,6 +32,25 @@ public class AdminProductController {
 
     public AdminProductController(ProductService productService) {
         this.productService = productService;
+    }
+
+    /** 管理端查询所有商品，包含下架商品，读取数据库最新信息。 */
+    @GetMapping
+    public ResponseEntity<List<Product>> list() {
+        List<Product> products = productService.listAdminProducts();
+        return ResponseEntity.ok(products);
+    }
+
+    /** 编辑前按 ID 查询最新详情，不复用用户侧缓存。 */
+    @GetMapping("/{id}")
+    public ResponseEntity<Product> detail(@PathVariable Long id) {
+        Optional<Product> result = productService.findAdminProduct(id);
+        if (result.isPresent()) {
+            Product product = result.get();
+            return ResponseEntity.ok(product);
+        } else {
+            return ResponseEntity.notFound().build();
+        }
     }
 
     /** 管理员新增商品。 */
