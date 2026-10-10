@@ -19,6 +19,7 @@ function logout() {
         <RouterLink to="/welcome">账户首页</RouterLink>
         <RouterLink v-if="auth.isAdmin" to="/admin">管理员身份</RouterLink>
         <RouterLink v-if="auth.isAdmin" to="/admin/products">商品管理</RouterLink>
+        <RouterLink v-if="auth.isAdmin" to="/admin/analytics">统计看板</RouterLink>
         <span v-if="auth.user">{{ auth.user.nickname }}</span>
         <el-button @click="logout">退出登录</el-button>
       </nav>

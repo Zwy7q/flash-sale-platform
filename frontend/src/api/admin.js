@@ -16,3 +16,14 @@ export function updateProductRequest(id, payload, signal) {
 export function productStatusRequest(id, status, signal) {
   return http.put('/admin/products/' + encodeURIComponent(id) + '/status', { status }, { signal })
 }
+
+// 统计由后端聚合 MySQL 和 Redis，前端只读取和展示，不自行累计订单。
+export function analyticsOverviewRequest(signal) {
+  return http.get('/admin/analytics/overview', { signal })
+}
+export function analyticsProductsRequest(signal) {
+  return http.get('/admin/analytics/products', { signal })
+}
+export function analyticsProductRequest(id, signal) {
+  return http.get('/admin/analytics/products/' + encodeURIComponent(id), { signal })
+}

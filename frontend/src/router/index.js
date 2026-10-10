@@ -11,6 +11,7 @@ import ProductListView from '../views/ProductListView.vue'
 import ProductDetailView from '../views/ProductDetailView.vue'
 import OrderListView from '../views/OrderListView.vue'
 import ProductManageView from '../views/admin/ProductManageView.vue'
+import AnalyticsView from '../views/admin/AnalyticsView.vue'
 
 export const router = createRouter({
   history: createWebHistory(),
@@ -29,6 +30,7 @@ export const router = createRouter({
         // 15B 只提供身份确认页，不提前实现管理商品和统计业务。
         { path: 'admin', component: AccessView, meta: { admin: true } },
         { path: 'admin/products', component: ProductManageView, meta: { admin: true } },
+        { path: 'admin/analytics', component: AnalyticsView, meta: { admin: true } },
         { path: 'forbidden', component: AccessView, meta: { denied: true } },
       ],
     },

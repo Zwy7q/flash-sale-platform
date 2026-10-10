@@ -130,6 +130,19 @@ footer { margin-top: auto; padding: 24px 5vw; border-top: 1px solid #e2e7df; col
 .product-table strong { display: block; max-width: 200px; overflow-wrap: anywhere; }
 .product-table .table-actions { flex-wrap: nowrap; }
 .conflict-note { background: #fff8ed; padding: 16px; margin-bottom: 18px; border-radius: 8px; font-size: 13px; line-height: 1.8; }
+/* 看板复用管理表格，数字卡片在窄屏自动换行。 */
+.statistics-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; margin: 22px 0; }
+.stat-card, .stat-request { background: white; border: 1px solid #dbe3d9; border-radius: 14px; padding: 24px; }
+.stat-card span, .stat-card small { display: block; color: #67786f; font-size: 12px; line-height: 1.8; }
+.stat-card strong { display: block; color: #13765b; font-size: 27px; margin: 12px 0; overflow-wrap: anywhere; }
+.stat-request { margin: 24px 0; font-size: 14px; line-height: 1.9; }
+.stat-request h2 { margin-top: 0; }
+.stat-request .section-heading { margin-bottom: 12px; }
+.statistics-time { color: #67786f; font-size: 13px; line-height: 1.8; }
+.analytics-page .el-alert, .analytics-page .empty-panel { margin: 18px 0; }
+.analytics-table { min-width: 1100px; }
+@media (max-width: 960px) { .statistics-grid { grid-template-columns: repeat(2, 1fr); } }
+@media (max-width: 480px) { .statistics-grid { grid-template-columns: 1fr; } }
 @media (max-width: 680px) { .form-grid { grid-template-columns: 1fr; } .product-editor { padding: 20px; } }
 @media (max-width: 680px) { .order-fields { grid-template-columns: 1fr; } .order-card { padding: 20px; } }
 @media (max-width: 960px) { .product-grid { grid-template-columns: repeat(2, 1fr); } .detail-grid { gap: 28px; } }

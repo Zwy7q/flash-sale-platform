@@ -1,7 +1,7 @@
-# 秒杀平台 Vue 前端 · 15E
+# 秒杀平台 Vue 前端 · 15F
 
 独立 Vue 工程，Spring Boot 在父目录。当前已完成账户、商品、秒杀、我的订单和管理员商品管理页面。
-后续按父目录 FRONTEND_PLAN.md 完成统计看板。教学见 LEARNING_15B.md～LEARNING_15E.md。
+现已新增管理员统计看板 /admin/analytics。教学见 LEARNING_15B.md～LEARNING_15F.md。
 
 ## 启动
 
@@ -90,5 +90,6 @@ npm run build
 当前 /api 代理只配置在开发服务器，生产需另外配置反向代理。
 修改 .env.development 或 vite.config.js 后重启 npm run dev。
 
-33 项前端测试集中于 src/auth.test.js、src/seckill.test.js、src/orders.test.js 和 src/admin.test.js。当前全量引入 Element Plus，构建可能提示 chunk 较大。
-商品管理的表单原理和手工验收见 LEARNING_15E.md。理解并验收后进入 15F：统计看板与整体验收。Git 提交/推送由用户自行执行。
+39 项前端测试集中于 src/auth.test.js、src/seckill.test.js、src/orders.test.js、src/admin.test.js 和 src/analytics.test.js。当前全量引入 Element Plus，构建可能提示 chunk 较大。
+统计口径与整体购买验收见 LEARNING_15F.md。本阶段没有后端代码变动；已有15E后端启动后无需为15F单独重启。
+理解、完成整体购买验收后进入阶段16：压测与项目整理。Git 提交/推送由用户自行执行。
