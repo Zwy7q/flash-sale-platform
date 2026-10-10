@@ -9,6 +9,7 @@ import AccessView from '../views/AccessView.vue'
 import MainLayout from '../layouts/MainLayout.vue'
 import ProductListView from '../views/ProductListView.vue'
 import ProductDetailView from '../views/ProductDetailView.vue'
+import OrderListView from '../views/OrderListView.vue'
 
 export const router = createRouter({
   history: createWebHistory(),
@@ -23,6 +24,7 @@ export const router = createRouter({
         { path: 'welcome', component: WelcomeView },
         { path: 'products', component: ProductListView },
         { path: 'products/:id', component: ProductDetailView },
+        { path: 'orders', component: OrderListView },
         // 15B 只提供身份确认页，不提前实现管理商品和统计业务。
         { path: 'admin', component: AccessView, meta: { admin: true } },
         { path: 'forbidden', component: AccessView, meta: { denied: true } },

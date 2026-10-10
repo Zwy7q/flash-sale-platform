@@ -15,6 +15,7 @@ function logout() {
       <RouterLink class="brand" to="/products"><span class="brand-mark">S</span>秒杀平台</RouterLink>
       <nav class="account-nav" aria-label="账户导航">
         <RouterLink to="/products">商品秒杀</RouterLink>
+        <RouterLink to="/orders">我的订单</RouterLink>
         <RouterLink to="/welcome">账户首页</RouterLink>
         <RouterLink v-if="auth.isAdmin" to="/admin">管理员身份</RouterLink>
         <span v-if="auth.user">{{ auth.user.nickname }}</span>
