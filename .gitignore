@@ -12,6 +12,9 @@ frontend/.env.local
 frontend/.env.*.local
 #计划文档
 docs/
+# 教学与学习文档只保留本地；GitHub 首页只发布根目录 README。
+*.md
+!/README.md
 # 本机 Maven 配置，路径因电脑而异
 maven-settings.xml
 
